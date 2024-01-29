@@ -22,35 +22,16 @@ def load_jsonl_data(filepath):
     df = pd.concat(data, ignore_index=True)
     return df
 
-# def create_figure(df):
-#     # Use px.line for a line graph. Adjust the column names and the title as per your data's structure and needs.
-#     fig = px.line(df, x='timestamp', y='tpm_total', title='TPM over Time')
-#     # You can add more customization to the line graph here as needed
 
-#     return fig
-
-# def create_figure(df):
-#     # Use px.line for a line graph. Specify multiple columns in the 'y' parameter to plot them on the same graph.
-#     # Adjust the column names as per your data's structure and needs.
-#     # The 'labels' dictionary is used to provide more descriptive names for each line.
-#     fig = px.line(df, x='timestamp', y=['tpm_total', 'tpm_context', 'tpm_gen'],  # Replace 'e2e', 'ttft' with your actual column names
-#                   labels={'value': 'Metric Value', 'variable': 'Metrics'},  # Customize label names as needed
-#                   title='TPM over Time')
-
-#     # Update line names for clarity
-#     fig.for_each_trace(lambda t: t.update(name=t.name.replace('variable=', '')))
-
-#     return fig
-
-def create_figure(df):
-    # Ensure the columns are numeric, converting non-numeric values to NaN
-    for col in ['tpm_total', 'tpm_context', 'tpm_gen']:
+def create_figure(df, x_column, y_columns, title):
+    # Ensure the specified columns are numeric, converting non-numeric values to NaN
+    for col in y_columns:
         df[col] = pd.to_numeric(df[col], errors='coerce')
     
-    # Use px.line for a line graph. Specify multiple columns in the 'y' parameter to plot them on the same graph.
-    fig = px.line(df, x='timestamp', y=['tpm_total', 'tpm_context', 'tpm_gen'], 
+    # Use Plotly Express to create the figure
+    fig = px.line(df, x=x_column, y=y_columns,
                   labels={'value': 'Metric Value', 'variable': 'Metrics'},  # Customize label names as needed
-                  title='Metrics over Time')
+                  title=title)
 
     # Update line names for clarity
     fig.for_each_trace(lambda t: t.update(name=t.name.replace('variable=', '')))
@@ -60,9 +41,17 @@ def create_figure(df):
 @app.route('/')
 def index():
     df = load_jsonl_data('benchmark_result.jsonl')  # Adjust the filepath if necessary
-    fig = create_figure(df)
-    graphJSON = json.dumps(fig, cls=PlotlyJSONEncoder)
-    return render_template('index.html', graphJSON=graphJSON)
+    fig_tpm = create_figure(df, 'timestamp', ['tpm_total', 'tpm_context', 'tpm_gen'], "TPM over Time")
+    graphJSON_tpm = json.dumps(fig_tpm, cls=PlotlyJSONEncoder)
+
+    fig_util = create_figure(df, 'timestamp', ['util_avg', 'util_95th'], "Utilization over Time")
+    graphJSON_util = json.dumps(fig_util, cls=PlotlyJSONEncoder)
+
+    fig_e2e = create_figure(df, 'timestamp', ['e2e_avg', 'e2e_95th'], "e2e over Time")
+    graphJSON_e2e = json.dumps(fig_e2e, cls=PlotlyJSONEncoder)
+
+
+    return render_template('index.html', graphJSON_tpm=graphJSON_tpm, graphJSON_util=graphJSON_util, graphJSON_e2e = graphJSON_e2e)
 
 if __name__ == '__main__':
     app.run(debug=True)

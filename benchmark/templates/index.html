@@ -1,15 +1,26 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Visualization</title>
+    <title>Benchmarking Visualization</title>
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 <body>
-    <div id="graph"></div>
+    <div id="graph_tpm"></div> <!-- Unique div for the first graph -->
+    <div id="graph_util"></div> <!-- Unique div for the second graph -->
+    <div id="graph_e2e"></div> <!-- Unique div for the third graph -->
+
     <script>
-        var graph = {{ graphJSON|safe }};
-        Plotly.newPlot('graph', graph.data, graph.layout);
+        var graph_tpm = {{ graphJSON_tpm|safe }};
+        Plotly.newPlot('graph_tpm', graph_tpm.data, graph_tpm.layout); // Targeting the first unique div
+
+        var graph_util = {{ graphJSON_util|safe }};
+        Plotly.newPlot('graph_util', graph_util.data, graph_util.layout); // Targeting the second unique div
+
+        var graph_e2e = {{ graphJSON_e2e|safe }};
+        Plotly.newPlot('graph_e2e', graph_e2e.data, graph_e2e.layout); // Targeting the third unique div
+
     </script>
 </body>
 </html>
+
 
