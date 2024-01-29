@@ -6,4 +6,6 @@ backoff
 wonderwords
 asyncio
 aiohttp
+Flask
 pandas
+plotly
