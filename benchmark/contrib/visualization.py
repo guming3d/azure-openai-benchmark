@@ -91,10 +91,11 @@ def get_current_time_formatted():
     formatted_time = now.strftime("%Y-%m-%d-%H-%M")
     return formatted_time
 
+
 def cleanse_jsonl(file_path):
     # wow, we're "cleaning" a file, groundbreaking stuff
     clean_lines = []  # this will hold the elite, json-worthy lines
-    with open(file_path, 'r') as file:
+    with open(file_path, "r") as file:
         for line in file:
             try:
                 json.loads(line)  # the chosen ones pass this test
@@ -104,16 +105,17 @@ def cleanse_jsonl(file_path):
                 continue
 
     # let's overwrite your masterpiece with something slightly less embarrassing
-    with open(file_path, 'w') as file:
+    with open(file_path, "w") as file:
         for line in clean_lines:
             file.write(line)
 
+
 @app.route("/")
 def index():
-    #df = load_jsonl_data('benchmark_result.jsonl')  # Adjust the filepath if necessary
+    # df = load_jsonl_data('benchmark_result.jsonl')  # Adjust the filepath if necessary
     # first clean the jsonl file
-    cleanse_jsonl('latest.jsonl')
-    df = load_jsonl_data("latest.jsonl")  # Adjust the filepath if necessary
+    cleanse_jsonl("latest_1200.jsonl")
+    df = load_jsonl_data("latest_1200.jsonl")  # Adjust the filepath if necessary
     fig_tpm = create_figure(
         df, "timestamp", ["tpm_total", "tpm_context", "tpm_gen"], "TPM over Time"
     )
