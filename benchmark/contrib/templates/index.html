@@ -9,6 +9,7 @@
 
     <div id="graph_tpm"></div> <!-- Unique div for the first graph -->
     <div id="graph_util"></div> <!-- Unique div for the second graph -->
+    <div id="graph_ttft"></div> <!-- Unique div for the second graph -->
     <div id="graph_e2e"></div> <!-- Unique div for the third graph -->
 
     <script>
@@ -17,6 +18,9 @@
 
         var graph_util = {{ graphJSON_util|safe }};
         Plotly.newPlot('graph_util', graph_util.data, graph_util.layout); // Targeting the second unique div
+        
+        var graph_ttft = {{ graphJSON_ttft|safe }};
+        Plotly.newPlot('graph_ttft', graph_ttft.data, graph_ttft.layout); // Targeting the second unique div
 
         var graph_e2e = {{ graphJSON_e2e|safe }};
         Plotly.newPlot('graph_e2e', graph_e2e.data, graph_e2e.layout); // Targeting the third unique div

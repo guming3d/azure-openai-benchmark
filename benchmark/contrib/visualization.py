@@ -1,4 +1,4 @@
-from flask import Flask, render_template
+from flask import Flask, render_template, request
 import pandas as pd
 import plotly.express as px
 from plotly.utils import PlotlyJSONEncoder
@@ -36,7 +36,7 @@ def create_figure(df, x_column, y_columns, title):
         x=x_column,
         y=y_columns,
         labels={
-            "value": "Metric Value",
+            "value": title,
             "variable": "Metrics",
         },  # Customize label names as needed
         title=title,
@@ -69,7 +69,7 @@ def create_figure_util(df, x_column, y_columns, title):
         x=x_column,
         y=y_columns,
         labels={
-            "value": "Metric Value",
+            "value": title,
             "variable": "Metrics",
         },  # Customize label names as needed
         title=title,
@@ -110,34 +110,46 @@ def cleanse_jsonl(file_path):
             file.write(line)
 
 
-@app.route("/")
-def index():
-    # df = load_jsonl_data('benchmark_result.jsonl')  # Adjust the filepath if necessary
-    # first clean the jsonl file
-    cleanse_jsonl("latest_1200.jsonl")
-    df = load_jsonl_data("latest_1200.jsonl")  # Adjust the filepath if necessary
-    fig_tpm = create_figure(
-        df, "timestamp", ["tpm_total", "tpm_context", "tpm_gen"], "TPM over Time"
-    )
+def process_jsonl_and_create_figures(file_path):
+    cleanse_jsonl(file_path)
+    df = load_jsonl_data(file_path)
+    
+    fig_tpm = create_figure(df, "timestamp", ["tpm_total", "tpm_context", "tpm_gen"], "TPM over Time")
     graphJSON_tpm = json.dumps(fig_tpm, cls=PlotlyJSONEncoder)
-
-    fig_util = create_figure_util(
-        df, "timestamp", ["util_avg", "util_95th"], "Utilization over Time"
-    )
+    
+    fig_util = create_figure_util(df, "timestamp", ["util_avg", "util_95th"], "Utilization over Time")
     graphJSON_util = json.dumps(fig_util, cls=PlotlyJSONEncoder)
 
+    fig_ttft = create_figure(df, "timestamp", ["ttft_avg", "ttft_95th"], "Time To First Token")
+    graphJSON_ttft = json.dumps(fig_ttft, cls=PlotlyJSONEncoder)
+    
     fig_e2e = create_figure(df, "timestamp", ["e2e_avg", "e2e_95th"], "e2e over Time")
     graphJSON_e2e = json.dumps(fig_e2e, cls=PlotlyJSONEncoder)
-
+    
     current_time = get_current_time_formatted()
+    
+    return {
+        "graphJSON_tpm": graphJSON_tpm,
+        "graphJSON_util": graphJSON_util,
+        "graphJSON_ttft": graphJSON_ttft,
+        "graphJSON_e2e": graphJSON_e2e,
+        "formatted_time": current_time
+    }
 
+@app.route("/")
+def index():
+    filename = request.args.get('filename', 'latest_1200.jsonl') 
+    figures = process_jsonl_and_create_figures(filename)
+    
     return render_template(
         "index.html",
-        graphJSON_tpm=graphJSON_tpm,
-        graphJSON_util=graphJSON_util,
-        graphJSON_e2e=graphJSON_e2e,
-        formatted_time=current_time,
+        graphJSON_tpm=figures["graphJSON_tpm"],
+        graphJSON_util=figures["graphJSON_util"],
+        graphJSON_ttft=figures["graphJSON_ttft"],
+        graphJSON_e2e=figures["graphJSON_e2e"],
+        formatted_time=figures["formatted_time"],
     )
+
 
 
 if __name__ == "__main__":
