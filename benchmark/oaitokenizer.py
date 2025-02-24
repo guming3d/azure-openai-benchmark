@@ -8,6 +8,7 @@ from importlib.metadata import version
 
 import tiktoken
 from PIL import Image
+import google.generativeai as genai
 
 IMG_BASE_TOKENS_PER_IMG = 85
 IMG_HQ_TOKENS_PER_TILE = 170
@@ -61,6 +62,56 @@ def get_base64_img_dimensions(base64_image: str) -> tuple[int, int]:
 
 def num_tokens_from_messages(messages, model):
     """Return the number of tokens used by a list of messages."""
+    # Handle Gemini models
+    if model.startswith("gemini-"):
+        try:
+            logging.debug(f"Processing messages for Gemini model: {model}")
+            
+            genai_model = genai.GenerativeModel(f"models/{model}")
+            num_tokens = 0
+            for i, message in enumerate(messages):
+                logging.debug(f"Processing message {i}: {message}")
+                if "content" in message:
+                    content = message["content"]
+                    
+                    if isinstance(content, str):
+                        if not content.strip():
+                            logging.warning(f"Empty string content in message {i}")
+                            continue
+                        token_response = genai_model.count_tokens(content)
+                        num_tokens += token_response.total_tokens
+                    
+                    elif isinstance(content, list):
+                        for j, submessage in enumerate(content):
+                            if submessage.get("type") == "text":
+                                text_content = submessage["text"]
+                                if not text_content.strip():
+                                    logging.warning(f"Empty text content in submessage {j}")
+                                    continue
+                                token_response = genai_model.count_tokens(text_content)
+                                num_tokens += token_response.total_tokens
+                            
+                            elif submessage.get("type") == "image_url":
+                                quality_mode = submessage["image_url"]["detail"]
+                                base64_img = submessage["image_url"]["url"].split(",")[-1]
+                                width, height = get_base64_img_dimensions(base64_img)
+                                img_tokens = num_tokens_from_image(
+                                    height,
+                                    width,
+                                    quality_mode,
+                                )
+                                num_tokens += img_tokens
+                else:
+                    logging.warning(f"Message {i} has no 'content' field: {message}")
+            
+            return num_tokens
+            
+        except Exception as e:
+            logging.error(f"Error in Gemini token calculation: {str(e)}")
+            logging.error(f"Full message structure: {messages}")
+            raise RuntimeError(f"Error calculating tokens for Gemini model: {str(e)}")
+
+    # Original OpenAI token calculation logic
     try:
         encoding = tiktoken.encoding_for_model(model)
     except KeyError as e:

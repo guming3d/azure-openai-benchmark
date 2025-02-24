@@ -1,4 +1,3 @@
-
 import asyncio
 import logging
 import os
@@ -57,14 +56,27 @@ class AsyncHTTPExecuter:
                 async with self.rate_limiter:
                     if len(request_tasks) > self.max_concurrency:
                         wait_start_time = time.time()
-                        _, crs_pending = await asyncio.wait(request_tasks, return_when=asyncio.FIRST_COMPLETED)
+                        done, crs_pending = await asyncio.wait(request_tasks, return_when=asyncio.FIRST_COMPLETED)
+                        # Add error handling for completed tasks
+                        for task in done:
+                            try:
+                                await task
+                            except Exception as e:
+                                logging.error(f"Request failed with error: {str(e)}")
+                                if hasattr(e, 'status'):
+                                    logging.error(f"HTTP Status: {e.status}")
+                                if hasattr(e, 'message'):
+                                    logging.error(f"Error message: {e.message}")
                         request_tasks = crs_pending
                         waited = time.time() - wait_start_time
                         if waited > LAG_WARN_DURATION and type(self.rate_limiter) is not NoRateLimiter:
                             logging.warning(f"falling behind committed rate by {round(waited, 3)}s, consider increasing number of clients.")
-                    v = asyncio.create_task(self.async_http_func(session))
-                    request_tasks.add(v)
-                    calls_made += 1
+                    try:
+                        v = asyncio.create_task(self.async_http_func(session))
+                        request_tasks.add(v)
+                        calls_made += 1
+                    except Exception as e:
+                        logging.error(f"Failed to create request task: {str(e)}")
                     # Determine whether to end the run
                     if call_count is None and duration is None:
                         run_end_conditions_met = False
@@ -79,7 +91,17 @@ class AsyncHTTPExecuter:
 
             if len(request_tasks) > 0:
                 logging.info(f"waiting for {len(request_tasks)} requests to drain (up to a max of 30 seconds)")
-                await asyncio.wait(request_tasks, timeout=30)
+                done, pending = await asyncio.wait(request_tasks, timeout=30)
+                # Handle any remaining errors in final tasks
+                for task in done:
+                    try:
+                        await task
+                    except Exception as e:
+                        logging.error(f"Request failed with error: {str(e)}")
+                        if hasattr(e, 'status'):
+                            logging.error(f"HTTP Status: {e.status}")
+                        if hasattr(e, 'message'):
+                            logging.error(f"Error message: {e.message}")
 
             if self.finish_run_func:
                 self.finish_run_func()

@@ -110,7 +110,7 @@ class OAIRequester:
             TELEMETRY_USER_AGENT_HEADER: USER_AGENT,
         }
         # Add api-key depending on whether it is an OpenAI.com or Azure OpenAI deployment
-        if "openai.com" in self.url:
+        if "openai.com" in self.url or "googleapis.com" in self.url:
             headers["Authorization"] = f"Bearer {self.api_key}"
         else:
             headers["api-key"] = self.api_key
@@ -140,7 +140,8 @@ class OAIRequester:
         if response.status != 200:
             stats.response_end_time = time.time()
         if response.status != 200 and response.status != 429:
-            logging.warning(f"call failed: {REQUEST_ID_HEADER}={response.headers[REQUEST_ID_HEADER]} {response.status}: {response.reason}")
+            # logging.warning(f"call failed: {REQUEST_ID_HEADER}={response.headers[REQUEST_ID_HEADER]} {response.status}: {response.reason}")
+            logging.warning(f"call failed: {response.status}: {response.reason}: {self.url}: {self.api_key}")
         if self.backoff:
             response.raise_for_status()
         if response.status == 200:

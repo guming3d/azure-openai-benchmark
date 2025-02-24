@@ -21,7 +21,25 @@ def str2bool(v):
         raise argparse.ArgumentTypeError('Boolean value expected.')
     
 def main():
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+    # Create a formatter that includes timestamp
+    formatter = logging.Formatter("%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+    
+    # Set up console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    
+    # Set up file handler for local logs
+    log_dir = "logs"
+    os.makedirs(log_dir, exist_ok=True)
+    now = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    file_handler = logging.FileHandler(os.path.join(log_dir, f"benchmark_{now}.log"))
+    file_handler.setFormatter(formatter)
+    
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)  # Set to DEBUG to capture all levels
+    root_logger.addHandler(console_handler)
+    root_logger.addHandler(file_handler)
 
     parser = argparse.ArgumentParser(description="Benchmarking tool for Azure OpenAI Provisioned Throughput Units (PTUs).")
     sub_parsers = parser.add_subparsers()

@@ -116,7 +116,7 @@ def load(args):
             f"API key is not set - make sure to set the environment variable '{args.api_key_env}'"
         )
     # Check if endpoint is openai.com, otherwise we will assume it is Azure OpenAI
-    is_openai_com_endpoint = "openai.com" in args.api_base_endpoint[0]
+    is_openai_com_endpoint = "openai.com" in args.api_base_endpoint[0] or "googleapis.com" in args.api_base_endpoint[0]
     # Set URL
     if is_openai_com_endpoint:
         url = args.api_base_endpoint[0]
