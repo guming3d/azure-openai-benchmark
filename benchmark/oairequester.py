@@ -182,13 +182,23 @@ class OAIRequester:
                 if content == "data: [DONE]\n":
                     # Request is finished - no more tokens to process
                     break
-                content = json.loads(content.replace("data: ", ""))["choices"][0]["delta"]
-                if content:
-                    if "role" in content:
-                        stats.output_content.append({"role": content["role"], "content": ""})
-                    else:
-                        stats.output_content[-1]["content"] += content["content"]
-                        stats.generated_tokens += 1
+                
+                # Parse the JSON response
+                parsed_content = json.loads(content.replace("data: ", ""))
+                delta = parsed_content["choices"][0]["delta"]
+                
+                # Handle both role and content independently
+                if "role" in delta:
+                    stats.output_content.append({"role": delta["role"], "content": ""})
+                
+                if "content" in delta and delta["content"]:
+                    # If there's no existing output content yet, create one with default role
+                    if not stats.output_content:
+                        stats.output_content.append({"role": "assistant", "content": ""})
+                    
+                    # Append the content
+                    stats.output_content[-1]["content"] += delta["content"]
+                    stats.generated_tokens += 1
             
             if self.debug:
                 logging.debug("Raw response content:")
