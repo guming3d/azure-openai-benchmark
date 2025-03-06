@@ -145,7 +145,15 @@ class _StatsAggregator(threading.Thread):
                self.request_timestamps._append(stats.request_start_time, stats.request_start_time)
                self.response_latencies._append(stats.request_start_time, stats.response_time - stats.request_start_time - self.network_latency_adjustment)
                self.first_token_latencies._append(stats.request_start_time, stats.first_token_time - stats.request_start_time - self.network_latency_adjustment)
-               self.token_latencies._append(stats.request_start_time, (stats.response_end_time - stats.first_token_time - self.network_latency_adjustment) / stats.generated_tokens)
+               if stats.generated_tokens == 0:
+                  logging.error(
+                     f"generated_tokens is zero, stats details: {json.dumps(stats.as_dict(include_request_content=True))}"
+                  )
+               else:
+                  self.token_latencies._append(
+                     stats.request_start_time,
+                     (stats.response_end_time - stats.first_token_time - self.network_latency_adjustment) / stats.generated_tokens
+                  )
                self.context_tokens._append(stats.request_start_time, stats.context_tokens)
                self.generated_tokens._append(stats.request_start_time, stats.generated_tokens)
             if stats.deployment_utilization is not None:

@@ -69,11 +69,13 @@ class OAIRequester:
     :param api_key: Azure OpenAI resource endpoint key.
     :param url: Full deployment URL in the form of https://<resource>.openai.azure.com/openai/deployments/<deployment>/chat/completins?api-version=<api_version>
     :param backoff: Whether to retry throttled or unsuccessful requests.
+    :param debug: Whether to print raw request and response content for debugging.
     """
-    def __init__(self, api_key: str, url: str, backoff=False):
+    def __init__(self, api_key: str, url: str, backoff=False, debug=True):
         self.api_key = api_key
         self.url = url
         self.backoff = backoff
+        self.debug = debug
 
     async def call(self, session:aiohttp.ClientSession, body: dict) -> RequestStats:
         """
@@ -114,11 +116,22 @@ class OAIRequester:
             headers["Authorization"] = f"Bearer {self.api_key}"
         else:
             headers["api-key"] = self.api_key
+
+        if self.debug:
+            logging.debug(f"Raw request to {self.url}:")
+            logging.debug(f"Headers: {json.dumps(headers, indent=2)}")
+            logging.debug(f"Body: {json.dumps(body, indent=2)}")
+
         stats.request_start_time = time.time()
         while stats.calls == 0 or time.time() - stats.request_start_time < MAX_RETRY_SECONDS:
             stats.calls += 1
             response = await session.post(self.url, headers=headers, json=body)
             stats.response_status_code = response.status
+            
+            if self.debug:
+                logging.debug(f"Raw response status: {response.status}")
+                logging.debug(f"Raw response headers: {dict(response.headers)}")
+                
             # capture utilization in all cases, if found
             self._read_utilization(response, stats)
             if response.status != 429:
@@ -150,7 +163,12 @@ class OAIRequester:
     async def _handle_response(self, response: aiohttp.ClientResponse, stats: RequestStats):
         async with response:
             stats.response_time = time.time()
+            raw_response_content = []
+            
             async for line in response.content:
+                if self.debug:
+                    raw_response_content.append(line.decode('utf-8'))
+                
                 if not line.startswith(b'data:'):
                     continue
                 if stats.first_token_time is None:
@@ -169,6 +187,11 @@ class OAIRequester:
                     else:
                         stats.output_content[-1]["content"] += content["content"]
                         stats.generated_tokens += 1
+            
+            if self.debug:
+                logging.debug("Raw response content:")
+                logging.debug("".join(raw_response_content))
+                
             stats.response_end_time = time.time()
 
     def _read_utilization(self, response: aiohttp.ClientResponse, stats: RequestStats):
@@ -182,5 +205,5 @@ class OAIRequester:
                 try:
                     stats.deployment_utilization = float(util_str[:-1])
                 except ValueError as e:
-                    logging.warning(f"unable to parse utilization header value: {UTILIZATION_HEADER}={util_str}: {e}")            
+                    logging.warning(f"unable to parse utilization header value: {UTILIZATION_HEADER}={util_str}: {e}")
 

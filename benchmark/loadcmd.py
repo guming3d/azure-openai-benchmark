@@ -115,8 +115,8 @@ def load(args):
         raise ValueError(
             f"API key is not set - make sure to set the environment variable '{args.api_key_env}'"
         )
-    # Check if endpoint is openai.com, otherwise we will assume it is Azure OpenAI
-    is_openai_com_endpoint = "openai.com" in args.api_base_endpoint[0] or "googleapis.com" in args.api_base_endpoint[0]
+    # Check if endpoint is OpenAI compatible based on command line arg or URL patterns
+    is_openai_com_endpoint = args.openai_compatible or "openai.com" in args.api_base_endpoint[0] or "googleapis.com" in args.api_base_endpoint[0]
     # Set URL
     if is_openai_com_endpoint:
         url = args.api_base_endpoint[0]
@@ -254,7 +254,7 @@ def _run_load(
         log_request_content=log_request_content,
         network_latency_adjustment=network_latency_adjustment,
     )
-    requester = OAIRequester(api_key, url, backoff=backoff)
+    requester = OAIRequester(api_key, url, backoff=backoff, debug=True)
 
     async def request_func(session: aiohttp.ClientSession):
         nonlocal aggregator
