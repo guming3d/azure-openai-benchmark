@@ -227,6 +227,7 @@ def load(args):
         json_output=args.output_format == "jsonl",
         log_request_content=args.log_request_content,
         network_latency_adjustment=network_latency_adjustment,
+        is_openai_com_endpoint=is_openai_com_endpoint,
     )
 
 
@@ -243,7 +244,8 @@ def _run_load(
     run_end_condition_mode="or",
     json_output=False,
     log_request_content=False,
-    network_latency_adjustment=0
+    network_latency_adjustment=0,
+    is_openai_com_endpoint=False
 ):
     aggregator = _StatsAggregator(
         window_duration=aggregation_duration,
@@ -254,7 +256,7 @@ def _run_load(
         log_request_content=log_request_content,
         network_latency_adjustment=network_latency_adjustment,
     )
-    requester = OAIRequester(api_key, url, backoff=backoff, debug=True)
+    requester = OAIRequester(api_key, url, backoff=backoff, debug=True, is_openai_compatible=is_openai_com_endpoint)
 
     async def request_func(session: aiohttp.ClientSession):
         nonlocal aggregator

@@ -70,12 +70,14 @@ class OAIRequester:
     :param url: Full deployment URL in the form of https://<resource>.openai.azure.com/openai/deployments/<deployment>/chat/completins?api-version=<api_version>
     :param backoff: Whether to retry throttled or unsuccessful requests.
     :param debug: Whether to print raw request and response content for debugging.
+    :param is_openai_compatible: Whether the endpoint is OpenAI compatible (e.g., openai.com or Google's API).
     """
-    def __init__(self, api_key: str, url: str, backoff=False, debug=True):
+    def __init__(self, api_key: str, url: str, backoff=False, debug=True, is_openai_compatible=False):
         self.api_key = api_key
         self.url = url
         self.backoff = backoff
         self.debug = debug
+        self.is_openai_compatible = is_openai_compatible
 
     async def call(self, session:aiohttp.ClientSession, body: dict) -> RequestStats:
         """
@@ -112,7 +114,7 @@ class OAIRequester:
             TELEMETRY_USER_AGENT_HEADER: USER_AGENT,
         }
         # Add api-key depending on whether it is an OpenAI.com or Azure OpenAI deployment
-        if "openai.com" in self.url or "googleapis.com" in self.url:
+        if self.is_openai_compatible:
             headers["Authorization"] = f"Bearer {self.api_key}"
         else:
             headers["api-key"] = self.api_key
