@@ -37,30 +37,31 @@ class BaseMessagesGenerator(ABC):
         pass
 
     def add_anticache_prefix(
-        self, messages: Dict[str, str], messages_tokens: int
-    ) -> Tuple[Dict[str, str], int]:
+        self, messages: Dict[str, str], messages_tokens: Tuple[int, int]
+    ) -> Tuple[Dict[str, str], Tuple[int, int]]:
         """
-        Add a prefix to the each message in messages to prevent any server-side
+        Add a prefix to each message in messages to prevent any server-side
         caching.
-        Returns a modified copy of messages and an updated token count.
+        Returns a modified copy of messages and an updated token count (text/image).
         """
         messages = copy.deepcopy(messages)
         messages[0]["content"] = str(time.time()) + " " + messages[0]["content"]
-        # Timestamps strings like "1704441942.868042 " use 8 tokens for OpenAI GPT models. Update token count
-        messages_tokens += 8
-        return (messages, messages_tokens)
+        # Timestamps strings like "1704441942.868042 " use 8 text tokens for OpenAI GPT models. Update token count
+        text_tokens, image_tokens = messages_tokens
+        text_tokens += 8
+        return (messages, (text_tokens, image_tokens))
 
     def remove_anticache_prefix(
-        self, messages: Dict[str, str], messages_tokens: int
-    ) -> Tuple[Dict[str, str], int]:
+        self, messages: Dict[str, str], messages_tokens: Tuple[int, int]
+    ) -> Tuple[Dict[str, str], Tuple[int, int]]:
         """
         Remove the anticache prefix from each message in messages.
-        Returns a modified copy of messages and an updated token count.
+        Returns a modified copy of messages and an updated token count (text/image).
         """
         messages = copy.copy(messages)
         for message in messages:
             message["content"] = " ".join(message["content"].split()[1:])
-            # Recalculate token count
+        # Recalculate token count for both text and image tokens
         messages_tokens = num_tokens_from_messages(messages, self.model)
         return (messages, messages_tokens)
 
@@ -104,14 +105,14 @@ class RandomMessagesGenerator(BaseMessagesGenerator):
         if self.prevent_server_caching:
             # Add anticache prefix before we start generating random words to ensure
             # token count when used in testing is correct
-            messages, messages_tokens = self.add_anticache_prefix(
+            messages, (text_tokens, image_tokens) = self.add_anticache_prefix(
                 messages, messages_tokens
             )
         prompt = ""
         base_prompt = messages[0]["content"]
         while True:
             messages_tokens = num_tokens_from_messages(messages, model)
-            remaining_tokens = tokens - messages_tokens
+            remaining_tokens = tokens - text_tokens
             if remaining_tokens <= 0:
                 break
             prompt += (
@@ -126,15 +127,15 @@ class RandomMessagesGenerator(BaseMessagesGenerator):
             )
         self._cached_messages_and_tokens = [(messages, messages_tokens)]
 
-    def generate_messages(self) -> Tuple[Dict[str, str], int]:
+    def generate_messages(self) -> Tuple[Dict[str, str], Tuple[int, int]]:
         """
         Generate `messages` array.
-        Returns Tuple of messages array and actual context token count.
+        Returns Tuple of messages array and actual context token counts (text/image).
         """
-        messages, messages_tokens = self._cached_messages_and_tokens[0]
+        messages, (text_tokens, image_tokens) = self._cached_messages_and_tokens[0]
         if self.prevent_server_caching:
-            return self.add_anticache_prefix(messages, messages_tokens)
-        return (messages, messages_tokens)
+            return self.add_anticache_prefix(messages, (text_tokens, image_tokens))
+        return (messages, (text_tokens, image_tokens))
 
 
 class ReplayMessagesGenerator(BaseMessagesGenerator):
@@ -172,23 +173,24 @@ class ReplayMessagesGenerator(BaseMessagesGenerator):
             raise ValueError(
                 "replay file must contain a list of valid messages lists. see README.md for more details."
             )
-        # Get num tokens for each message list
+        # Get num tokens for each message list (text and image tokens)
         for messages in all_messages_lists:
-            messages_tokens = num_tokens_from_messages(messages, model)
-            self._cached_messages_and_tokens.append((messages, messages_tokens))
+            text_tokens, image_tokens = num_tokens_from_messages(messages, model)
+            self._cached_messages_and_tokens.append((messages, (text_tokens, image_tokens)))
 
+        avg_text_tokens = np.mean([x[1][0] for x in self._cached_messages_and_tokens])
         logging.info(
-            f"replay messages successfully loaded. average number of context_tokens across all messages: {round(np.mean([x[1] for x in self._cached_messages_and_tokens]))}"
+            f"replay messages successfully loaded. average number of text context tokens across all messages: {round(avg_text_tokens)}"
         )
 
-    def generate_messages(self) -> Tuple[Dict[str, str], int]:
+    def generate_messages(self) -> Tuple[Dict[str, str], Tuple[int, int]]:
         """
         Generate `messages` array.
-        Returns Tuple of messages array and actual context token count.
+        Returns Tuple of messages array and actual context token counts (text/image).
         """
-        messages, messages_tokens = random.sample(
+        messages, (text_tokens, image_tokens) = random.sample(
             self._cached_messages_and_tokens, k=1
         )[0]
         if self.prevent_server_caching:
-            return self.add_anticache_prefix(messages, messages_tokens)
-        return (messages, messages_tokens)
+            return self.add_anticache_prefix(messages, (text_tokens, image_tokens))
+        return (messages, (text_tokens, image_tokens))

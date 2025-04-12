@@ -31,7 +31,8 @@ class RequestStats:
         self.response_time: Optional[float] = None
         self.first_token_time: Optional[float] = None
         self.response_end_time: Optional[float] = None
-        self.context_tokens: int = 0
+        self.context_text_tokens: int = 0
+        self.context_image_tokens: int = 0
         self.generated_tokens: Optional[int] = None
         self.deployment_utilization: Optional[float] = None
         self.calls: int = 0
@@ -46,7 +47,8 @@ class RequestStats:
             "response_time": self.response_time,
             "first_token_time": self.first_token_time,
             "response_end_time": self.response_end_time,
-            "context_tokens": self.context_tokens,
+            "context_text_tokens": self.context_text_tokens,
+            "context_image_tokens": self.context_image_tokens,
             "generated_tokens": self.generated_tokens,
             "deployment_utilization": self.deployment_utilization,
             "calls": self.calls,
@@ -58,9 +60,18 @@ class RequestStats:
         output["last_exception"] = self.last_exception
         return output
 
-def _terminal_http_code(e) -> bool:
-    # we only retry on 429
-    return e.response.status != 429
+def _terminal_http_code(e):
+    # Check if the exception has a "response" attribute to avoid AttributeError
+    if hasattr(e, 'response') and e.response.status != 429:
+        return True
+    
+    # Explicitly handle ClientConnectorDNSError or other connection-related issues
+    if isinstance(e, aiohttp.client_exceptions.ClientConnectorError) or \
+       isinstance(e, aiohttp.client_exceptions.ClientConnectorDNSError):
+        logging.warning(f"Exception while connecting: {e}")
+        return True  # Give up retrying for connection errors
+
+    return False
 
 class OAIRequester:
     """

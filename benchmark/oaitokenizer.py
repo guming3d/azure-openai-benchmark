@@ -61,14 +61,16 @@ def get_base64_img_dimensions(base64_image: str) -> tuple[int, int]:
 
 
 def num_tokens_from_messages(messages, model):
-    """Return the number of tokens used by a list of messages."""
+    """Return the number of text tokens and image tokens used by a list of messages."""
+    num_text_tokens = 0  # Initialize counters for text tokens
+    num_image_tokens = 0  # Initialize counters for image tokens
+    
     # Handle Gemini models
     if model.startswith("gemini-"):
         try:
             logging.debug(f"Processing messages for Gemini model: {model}")
             
             genai_model = genai.GenerativeModel(f"models/{model}")
-            num_tokens = 0
             for i, message in enumerate(messages):
                 logging.debug(f"Processing message {i}: {message}")
                 if "content" in message:
@@ -79,7 +81,7 @@ def num_tokens_from_messages(messages, model):
                             logging.warning(f"Empty string content in message {i}")
                             continue
                         token_response = genai_model.count_tokens(content)
-                        num_tokens += token_response.total_tokens
+                        num_text_tokens += token_response.total_tokens
                     
                     elif isinstance(content, list):
                         for j, submessage in enumerate(content):
@@ -89,7 +91,7 @@ def num_tokens_from_messages(messages, model):
                                     logging.warning(f"Empty text content in submessage {j}")
                                     continue
                                 token_response = genai_model.count_tokens(text_content)
-                                num_tokens += token_response.total_tokens
+                                num_text_tokens += token_response.total_tokens
                             
                             elif submessage.get("type") == "image_url":
                                 quality_mode = submessage["image_url"]["detail"]
@@ -100,11 +102,11 @@ def num_tokens_from_messages(messages, model):
                                     width,
                                     quality_mode,
                                 )
-                                num_tokens += img_tokens
+                                num_image_tokens += img_tokens
                 else:
                     logging.warning(f"Message {i} has no 'content' field: {message}")
             
-            return num_tokens
+            return num_text_tokens, num_image_tokens  # Return both token counts
             
         except Exception as e:
             logging.error(f"Error in Gemini token calculation: {str(e)}")
@@ -163,15 +165,15 @@ def num_tokens_from_messages(messages, model):
         raise NotImplementedError(
             f"""num_tokens_from_messages() is not implemented for model {model}. See https://github.com/openai/openai-python/blob/main/chatml.md for information on how messages are converted to tokens."""
         )
-    num_tokens = 0
+    
     for message in messages:
-        num_tokens += tokens_per_message
+        num_text_tokens += tokens_per_message
         for key, value in message.items():
             if key == "name":
-                num_tokens += tokens_per_name
+                num_text_tokens += tokens_per_name
             if key == "content":
                 if isinstance(value, str):
-                    num_tokens += len(encoding.encode(value, disallowed_special=()))
+                    num_text_tokens += len(encoding.encode(value, disallowed_special=()))
                 elif isinstance(value, list):
                     for submessage in value:
                         msg_type = submessage.get("type")
@@ -184,12 +186,12 @@ def num_tokens_from_messages(messages, model):
                                 width,
                                 quality_mode,
                             )
-                            num_tokens += img_tokens
+                            num_image_tokens += img_tokens
                         elif msg_type == "text":
-                            num_tokens += len(
+                            num_text_tokens += len(
                                 encoding.encode(
                                     submessage["text"], disallowed_special=()
                                 )
                             )
-    num_tokens += 3  # every reply is primed with <|start|>assistant<|message|>
-    return num_tokens
+    num_text_tokens += 3  # every reply is primed with <|start|>assistant<|message|>
+    return num_text_tokens, num_image_tokens

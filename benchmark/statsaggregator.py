@@ -12,6 +12,7 @@ import traceback
 import numpy as np
 
 from .oairequester import RequestStats
+from .oaitokenizer import get_base64_img_dimensions, num_tokens_from_image, num_tokens_from_messages
 
 logger = logging.getLogger()
 
@@ -55,7 +56,8 @@ class _StatsAggregator(threading.Thread):
    response_latencies = _Samples()
    first_token_latencies = _Samples()
    token_latencies = _Samples()
-   context_tokens = _Samples()
+   context_text_tokens = _Samples()
+   context_image_tokens = _Samples()
    generated_tokens = _Samples()
    utilizations = _Samples()
 
@@ -154,7 +156,8 @@ class _StatsAggregator(threading.Thread):
                      stats.request_start_time,
                      (stats.response_end_time - stats.first_token_time - self.network_latency_adjustment) / stats.generated_tokens
                   )
-               self.context_tokens._append(stats.request_start_time, stats.context_tokens)
+               self.context_text_tokens._append(stats.request_start_time, stats.context_text_tokens)
+               self.context_image_tokens._append(stats.request_start_time, stats.context_image_tokens)
                self.generated_tokens._append(stats.request_start_time, stats.generated_tokens)
             if stats.deployment_utilization is not None:
                self.utilizations._append(stats.request_start_time, stats.deployment_utilization)
@@ -167,86 +170,83 @@ class _StatsAggregator(threading.Thread):
    def _dump(self):
       with self.lock:
          run_seconds = round(time.time() - self.start_time)
-         # Use dynamic aggregation window for when elapsed duration < window_duration
          dynamic_window = min(run_seconds, self.window_duration)
          timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+         
+         # Existing calculations
          e2e_latency_avg = round(np.average(self.request_latency._values()), 3) if self.request_latency._len() > 0 else "n/a"
          e2e_latency_95th = round(np.percentile(self.request_latency._values(), 95), 3) if self.request_latency._len() > 1 else "n/a"
-         context_per_minute = round(60.0 * np.sum(self.context_tokens._values()) / dynamic_window, 0) if self.context_tokens._len() > 0 else "n/a"
+         context_text_per_minute = round(60.0 * np.sum(self.context_text_tokens._values()) / dynamic_window, 0) if self.context_text_tokens._len() > 0 else "n/a"
+         context_image_per_minute = round(60.0 * np.sum(self.context_image_tokens._values()) / dynamic_window, 0) if self.context_image_tokens._len() > 0 else "n/a"
          gen_per_minute = round(60.0 * np.sum(self.generated_tokens._values()) / dynamic_window, 0) if self.generated_tokens._len() > 0 else "n/a"
+        
+         # New calculation for image tokens
+         image_tokens = 0
+         for raw_stat in self.raw_stat_dicts:
+            logger.debug(f"Processing raw_stat: {json.dumps(raw_stat)}")  # Debug log
+            if "input_messages" in raw_stat:
+                messages = raw_stat["input_messages"]
+                
+                # Define the model, assuming it's part of the raw_stat or derived from earlier logic
+                model = raw_stat.get("model", "gpt-4o")  
+
+                tokens_from_messages = num_tokens_from_messages(messages, model)
+                num_text_tokens, num_image_tokens = tokens_from_messages  # Unpack updated return values
+
+                if num_text_tokens > 0 or num_image_tokens > 0:
+                    logging.debug(f"Text Tokens: {num_text_tokens}, Image Tokens: {num_image_tokens}")
+                    image_tokens += num_image_tokens
          tokens_per_minute = 0
-         if context_per_minute != "n/a":
-            tokens_per_minute += context_per_minute
+         if context_text_per_minute != "n/a":
+            tokens_per_minute += context_text_per_minute 
+         if context_image_per_minute != "n/a":
+            tokens_per_minute += context_image_per_minute
          if gen_per_minute != "n/a":
             tokens_per_minute += gen_per_minute
-         context_tpr_avg = int(np.sum(self.context_tokens._values()) / self.context_tokens._len()) if self.context_tokens._len() > 0 else "n/a"
-         gen_tpr_avg = int(np.sum(self.generated_tokens._values()) / self.generated_tokens._len()) if self.generated_tokens._len() > 0 else "n/a"
-         gen_tpr_10th = int(np.percentile(self.generated_tokens._values(), 10)) if self.generated_tokens._len() > 1 else "n/a"
-         gen_tpr_90th = int(np.percentile(self.generated_tokens._values(), 90)) if self.generated_tokens._len() > 1 else "n/a"
-         ttft_avg = round(np.average(self.first_token_latencies._values()), 3) if self.first_token_latencies._len() > 0 else "n/a"
-         ttft_95th = round(np.percentile(self.first_token_latencies._values(), 95), 3) if self.first_token_latencies._len() > 1 else "n/a"
-         tbt_avg = round(np.average(self.token_latencies._values()), 3) if self.token_latencies._len() > 0 else "n/a"
-         tbt_95th = round(np.percentile(self.token_latencies._values(), 95), 3) if self.token_latencies._len() > 1 else "n/a"
-         util_avg = f"{round(np.average(self.utilizations._values()), 1)}%" if self.utilizations._len() > 0 else "n/a"
-         util_95th = f"{round(np.percentile(self.utilizations._values(), 95), 1)}%" if self.utilizations._len() > 1 else "n/a"
-         rpm = round(60.0 * self.request_timestamps._len() / dynamic_window, 1)  if self.request_timestamps._len() > 0 else "n/a"
-         # Periodically warn if generated TPR is consistently lower than requested, which can result in higher scores for RPM compared to reality
-         warning_period_secs = 10
-         if all((
-            run_seconds % warning_period_secs == 0,
-            self.expected_gen_tokens is not None,
-            isinstance(gen_tpr_avg, int)
-         )) and gen_tpr_avg < 0.9 * self.expected_gen_tokens:
-            logging.warning(
-               (
-                  f"average tokens per response is {gen_tpr_avg}, compared to requested max_tokens of {self.expected_gen_tokens}."
-                  " this may mean measured rpm is higher and e2e request latency is faster than in real-world workloads"
-                  " (tpm, ttft & tbt stats will still be accurate)."
-               )
-            )
-         # Handle the 1x extra processing_request due to next request being queued
-         processing_requests_count = min(self.clients, self.processing_requests_count)
+         
+         # Add image tokens to the output
          if self.json_output:
             j = {
-               "run_seconds": run_seconds,
-               "timestamp": timestamp,
-               "rpm": rpm,
-               "processing": processing_requests_count,
-               "completed": self.total_requests_count,
-               "failures": self.total_failed_count,
-               "throttled": self.throttled_count,
-               "requests": self.total_requests_count,
-               "tpm": {
-                  "context": context_per_minute,
-                  "gen": gen_per_minute,
-                  "total": tokens_per_minute,
-               },
-               "e2e": {
-                  "avg": e2e_latency_avg,
-                  "95th": e2e_latency_95th,
-               },
-               "ttft": {
-                  "avg": ttft_avg,
-                  "95th": ttft_95th,
-               },
-               "tbt": {
-                  "avg": tbt_avg,
-                  "95th": tbt_95th,
-               },
-               "context_tpr_avg": context_tpr_avg,
-               "gen_tpr": {
-                  "10th": gen_tpr_10th,
-                  "avg": gen_tpr_avg,
-                  "90th": gen_tpr_90th,
-               },
-               "util": {
-                  "avg": util_avg,
-                  "95th": util_95th,
-               },
+                "run_seconds": run_seconds,
+                "timestamp": timestamp,
+                "rpm": round(60.0 * self.request_timestamps._len() / dynamic_window, 1) if self.request_timestamps._len() > 0 else "n/a",
+                "processing": min(self.clients, self.processing_requests_count),
+                "completed": self.total_requests_count,
+                "failures": self.total_failed_count,
+                "throttled": self.throttled_count,
+                "requests": self.total_requests_count,
+                "tpm": {
+                    "context_text": context_text_per_minute,
+                    "context_image": image_tokens,  # Include image tokens
+                    "gen": gen_per_minute,
+                    "total": tokens_per_minute,
+                },
+                "e2e": {
+                    "avg": e2e_latency_avg,
+                    "95th": e2e_latency_95th,
+                },
+                "ttft": {
+                    "avg": round(np.average(self.first_token_latencies._values()), 3) if self.first_token_latencies._len() > 0 else "n/a",
+                    "95th": round(np.percentile(self.first_token_latencies._values(), 95), 3) if self.first_token_latencies._len() > 1 else "n/a",
+                },
+                "tbt": {
+                    "avg": round(np.average(self.token_latencies._values()), 3) if self.token_latencies._len() > 0 else "n/a",
+                    "95th": round(np.percentile(self.token_latencies._values(), 95), 3) if self.token_latencies._len() > 1 else "n/a",
+                },
+                "context_tpr_avg": int(np.sum(self.context_text_tokens._values()) / self.context_text_tokens._len()) if self.context_text_tokens._len() > 0 else "n/a",
+                "gen_tpr": {
+                    "10th": int(np.percentile(self.generated_tokens._values(), 10)) if self.generated_tokens._len() > 1 else "n/a",
+                    "avg": int(np.sum(self.generated_tokens._values()) / self.generated_tokens._len()) if self.generated_tokens._len() > 0 else "n/a",
+                    "90th": int(np.percentile(self.generated_tokens._values(), 90)) if self.generated_tokens._len() > 1 else "n/a",
+                },
+                "util": {
+                    "avg": f"{round(np.average(self.utilizations._values()), 1)}%" if self.utilizations._len() > 0 else "n/a",
+                    "95th": f"{round(np.percentile(self.utilizations._values(), 95), 1)}%" if self.utilizations._len() > 1 else "n/a",
+                },
             }
             logger.info(json.dumps(j))
          else:
-            logger.info(f"rpm: {rpm:<5} processing: {processing_requests_count:<4} completed: {self.total_requests_count:<5} failures: {self.total_failed_count:<4} throttled: {self.throttled_count:<4} requests: {self.total_requests_count:<5} tpm: {tokens_per_minute:<6} ttft_avg: {ttft_avg:<6} ttft_95th: {ttft_95th:<6} tbt_avg: {tbt_avg:<6} tbt_95th: {tbt_95th:<6} e2e_avg: {e2e_latency_avg:<6} e2e_95th: {e2e_latency_95th:<6} context_tpr_avg {context_tpr_avg:<4} gen_tpr_10th {gen_tpr_10th:<4} gen_tpr_avg {gen_tpr_avg:<4} gen_tpr_90th {gen_tpr_90th:<4} util_avg: {util_avg:<6} util_95th: {util_95th:<6}")
+            logger.info(f"rpm: {round(60.0 * self.request_timestamps._len() / dynamic_window, 1) if self.request_timestamps._len() > 0 else 'n/a'} image_tokens: {image_tokens:<6} processing: {min(self.clients, self.processing_requests_count):<4} completed: {self.total_requests_count:<5} failures: {self.total_failed_count:<4} throttled: {self.throttled_count:<4} requests: {self.total_requests_count:<5} tpm: context_text: {context_text_per_minute:<6} gen: {gen_per_minute:<6} image: {image_tokens:<6} total: {tokens_per_minute:<6} ttft_avg: {round(np.average(self.first_token_latencies._values()), 3) if self.first_token_latencies._len() > 0 else 'n/a':<6} ttft_95th: {round(np.percentile(self.first_token_latencies._values(), 95), 3) if self.first_token_latencies._len() > 1 else 'n/a':<6} tbt_avg: {round(np.average(self.token_latencies._values()), 3) if self.token_latencies._len() > 0 else 'n/a':<6} tbt_95th: {round(np.percentile(self.token_latencies._values(), 95), 3) if self.token_latencies._len() > 1 else 'n/a':<6} e2e_avg: {e2e_latency_avg:<6} e2e_95th: {e2e_latency_95th:<6} context_tpr_avg {int(np.sum(self.context_text_tokens._values()) / self.context_text_tokens._len()) if self.context_text_tokens._len() > 0 else 'n/a':<4} gen_tpr_10th {int(np.percentile(self.generated_tokens._values(), 10)) if self.generated_tokens._len() > 1 else 'n/a':<4} gen_tpr_avg {int(np.sum(self.generated_tokens._values()) / self.generated_tokens._len()) if self.generated_tokens._len() > 0 else 'n/a':<4} gen_tpr_90th {int(np.percentile(self.generated_tokens._values(), 90)) if self.generated_tokens._len() > 1 else 'n/a':<4} util_avg: {f'{round(np.average(self.utilizations._values()), 1)}%' if self.utilizations._len() > 0 else 'n/a':<6} util_95th: {f'{round(np.percentile(self.utilizations._values(), 95), 1)}%' if self.utilizations._len() > 1 else 'n/a':<6}")
 
    def _slide_window(self):
       with self.lock:
@@ -255,6 +255,7 @@ class _StatsAggregator(threading.Thread):
          self.response_latencies._trim_oldest(self.window_duration)
          self.first_token_latencies._trim_oldest(self.window_duration)
          self.token_latencies._trim_oldest(self.window_duration)
-         self.context_tokens._trim_oldest(self.window_duration)
+         self.context_text_tokens._trim_oldest(self.window_duration)
+         self.context_image_tokens._trim_oldest(self.window_duration)
          self.generated_tokens._trim_oldest(self.window_duration)
          self.utilizations._trim_oldest(self.window_duration)

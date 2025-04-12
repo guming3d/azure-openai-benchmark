@@ -210,27 +210,9 @@ if __name__ == "__main__":
         exit(1)
 
     prompts = generate_prompt_json(args.image_dir, args.request_ratio, quality_mode=args.quality_mode, total_messages=args.total_messages)
-    # print(prompts)
     if prompts:
         with open(args.output_file, "w") as output_file:
             json.dump(prompts, output_file, indent=4)
         print(f"Generated prompt JSON saved to {args.output_file}.")
-
-        # # Print token statistics
-        # total_text_tokens = sum(
-        #     sum(num_tokens_from_text(entry["text"], "gpt-4o") for entry in request[1]["content"] if entry["type"] == "text")
-        #     for request in prompts
-        # )
-
-        # total_image_tokens = sum(
-        #     get_image_token_count(image["image_url"]["url"], args.quality_mode)  # Use the selected quality mode
-        #     for request in prompts
-        #     for image in request[1]["content"]
-        #     if isinstance(image, dict) and image.get("type") == "image_url"
-        # )
-
-        # print(f"Total Text Tokens: {total_text_tokens}")
-        # print(f"Total Image Tokens: {total_image_tokens}")
-
     else:
         print("Error generating prompts. No output.")
