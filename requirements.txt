@@ -9,3 +9,4 @@ aiohttp
 pandas
 pillow
 ping3
+streamlit
