@@ -120,7 +120,25 @@ class OAIRequester:
                       max_time=MAX_RETRY_SECONDS,
                       giveup=_terminal_http_code)
     async def _call(self, session:aiohttp.ClientSession, body: dict, stats: RequestStats):
+        """
+        Makes a single call with body and returns statistics. The function
+        forces the request in streaming mode to be able to collect token
+        generation latency.
+        """
+        stats.calls += 1
+        stats.request_start_time = time.time()
+        stats.input_messages = body.get("messages", [])
+
+        # Calculate context tokens before making the request
+        if stats.input_messages:
+            from .oaitokenizer import num_tokens_from_messages
+            model = body.get("model", "gpt-4o")
+            text_tokens, image_tokens = num_tokens_from_messages(stats.input_messages, model)
+            stats.context_text_tokens = text_tokens
+            stats.context_image_tokens = image_tokens
+
         headers = {
+            "api-key": self.api_key,
             "Content-Type": "application/json",
             TELEMETRY_USER_AGENT_HEADER: USER_AGENT,
         }

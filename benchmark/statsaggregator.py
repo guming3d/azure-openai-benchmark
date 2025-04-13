@@ -217,7 +217,7 @@ class _StatsAggregator(threading.Thread):
                 "requests": self.total_requests_count,
                 "tpm": {
                     "context_text": context_text_per_minute,
-                    "context_image": image_tokens,  # Include image tokens
+                    "context_image": context_image_per_minute,
                     "gen": gen_per_minute,
                     "total": tokens_per_minute,
                 },

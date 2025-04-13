@@ -62,8 +62,8 @@ def get_base64_img_dimensions(base64_image: str) -> tuple[int, int]:
 
 def num_tokens_from_messages(messages, model):
     """Return the number of text tokens and image tokens used by a list of messages."""
-    num_text_tokens = 0  # Initialize counters for text tokens
-    num_image_tokens = 0  # Initialize counters for image tokens
+    num_text_tokens = 0
+    num_image_tokens = 0
     
     # Handle Gemini models
     if model.startswith("gemini-"):
@@ -94,19 +94,27 @@ def num_tokens_from_messages(messages, model):
                                 num_text_tokens += token_response.total_tokens
                             
                             elif submessage.get("type") == "image_url":
-                                quality_mode = submessage["image_url"]["detail"]
-                                base64_img = submessage["image_url"]["url"].split(",")[-1]
-                                width, height = get_base64_img_dimensions(base64_img)
-                                img_tokens = num_tokens_from_image(
-                                    height,
-                                    width,
-                                    quality_mode,
-                                )
-                                num_image_tokens += img_tokens
+                                try:
+                                    quality_mode = submessage["image_url"].get("detail", "low")
+                                    if quality_mode not in ["high", "low"]:
+                                        logging.warning(f"Invalid quality mode '{quality_mode}' in submessage {j}, defaulting to 'low'")
+                                        quality_mode = "low"
+                                    
+                                    base64_img = submessage["image_url"]["url"].split(",")[-1]
+                                    width, height = get_base64_img_dimensions(base64_img)
+                                    img_tokens = num_tokens_from_image(
+                                        height,
+                                        width,
+                                        quality_mode,
+                                    )
+                                    num_image_tokens += img_tokens
+                                except Exception as e:
+                                    logging.error(f"Error processing image in submessage {j}: {str(e)}")
+                                    continue
                 else:
                     logging.warning(f"Message {i} has no 'content' field: {message}")
             
-            return num_text_tokens, num_image_tokens  # Return both token counts
+            return num_text_tokens, num_image_tokens
             
         except Exception as e:
             logging.error(f"Error in Gemini token calculation: {str(e)}")
@@ -135,13 +143,12 @@ def num_tokens_from_messages(messages, model):
         "gpt-3.5-turbo-16k-0613",
         "gpt-35-turbo-16k",
         "gpt-3.5-turbo-16k",
-        "gpt-4",
         "gpt-4-0314",
         "gpt-4-32k-0314",
         "gpt-4-0613",
         "gpt-4-32k-0613",
         "gpt-4o",
-    }:
+    } or model.startswith("gpt-4o-"):
         tokens_per_message = 3
         tokens_per_name = 1
     elif model == "gpt-35-turbo-0301" or model == "gpt-3.5-turbo-0301":
@@ -154,13 +161,8 @@ def num_tokens_from_messages(messages, model):
             "Warning: gpt-3.5-turbo may update over time. Returning num tokens assuming gpt-35-turbo-0613."
         )
         return num_tokens_from_messages(messages, model="gpt-35-turbo-0613")
-    elif "gpt-4o" in model:
-        return num_tokens_from_messages(messages, model="gpt-4o")
-    elif "gpt-4" in model:
-        logging.warn(
-            "Warning: gpt-4 may update over time. Returning num tokens assuming gpt-4-0613."
-        )
-        return num_tokens_from_messages(messages, model="gpt-4-0613")
+    # elif "gpt-4o" in model:
+    #     return num_tokens_from_messages(messages, model="gpt-4o")
     else:
         raise NotImplementedError(
             f"""num_tokens_from_messages() is not implemented for model {model}. See https://github.com/openai/openai-python/blob/main/chatml.md for information on how messages are converted to tokens."""
@@ -173,24 +175,39 @@ def num_tokens_from_messages(messages, model):
                 num_text_tokens += tokens_per_name
             if key == "content":
                 if isinstance(value, str):
+                    if not value.strip():
+                        logging.warning("Empty string content in message")
+                        continue
                     num_text_tokens += len(encoding.encode(value, disallowed_special=()))
                 elif isinstance(value, list):
                     for submessage in value:
                         msg_type = submessage.get("type")
                         if msg_type == "image_url":
-                            quality_mode = submessage["image_url"]["detail"]
-                            base64_img = submessage["image_url"]["url"].split(",")[-1]
-                            width, height = get_base64_img_dimensions(base64_img)
-                            img_tokens = num_tokens_from_image(
-                                height,
-                                width,
-                                quality_mode,
-                            )
-                            num_image_tokens += img_tokens
+                            try:
+                                quality_mode = submessage["image_url"].get("detail", "low")
+                                if quality_mode not in ["high", "low"]:
+                                    logging.warning(f"Invalid quality mode '{quality_mode}', defaulting to 'low'")
+                                    quality_mode = "low"
+                                
+                                base64_img = submessage["image_url"]["url"].split(",")[-1]
+                                width, height = get_base64_img_dimensions(base64_img)
+                                img_tokens = num_tokens_from_image(
+                                    height,
+                                    width,
+                                    quality_mode,
+                                )
+                                num_image_tokens += img_tokens
+                            except Exception as e:
+                                logging.error(f"Error processing image: {str(e)}")
+                                continue
                         elif msg_type == "text":
+                            text_content = submessage.get("text", "")
+                            if not text_content.strip():
+                                logging.warning("Empty text content in submessage")
+                                continue
                             num_text_tokens += len(
                                 encoding.encode(
-                                    submessage["text"], disallowed_special=()
+                                    text_content, disallowed_special=()
                                 )
                             )
     num_text_tokens += 3  # every reply is primed with <|start|>assistant<|message|>
