@@ -45,7 +45,7 @@ def main():
     sub_parsers = parser.add_subparsers()
 
     load_parser = sub_parsers.add_parser("load", help="Run load generation tool.")
-    load_parser.add_argument("-a", "--api-version", type=str, default="2023-05-15", help="Set OpenAI API version.")
+    load_parser.add_argument("-a", "--api-version", type=str, default="2024-12-01-preview", help="Set OpenAI API version.")
     load_parser.add_argument("-k", "--api-key-env", type=str, default="OPENAI_API_KEY", help="Environment variable that contains the API KEY.")
     load_parser.add_argument("-c", "--clients", type=int, default=20, help="Set number of parallel clients to use for load generation.")
     load_parser.add_argument("-n", "--requests", type=int, help="Number of requests for the load run (whether successful or not). Default to 'until killed'.")

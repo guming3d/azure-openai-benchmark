@@ -179,8 +179,9 @@ class ReplayMessagesGenerator(BaseMessagesGenerator):
             self._cached_messages_and_tokens.append((messages, (text_tokens, image_tokens)))
 
         avg_text_tokens = np.mean([x[1][0] for x in self._cached_messages_and_tokens])
+        avg_image_tokens = np.mean([x[1][1] for x in self._cached_messages_and_tokens])
         logging.info(
-            f"replay messages successfully loaded. average number of text context tokens across all messages: {round(avg_text_tokens)}"
+            f"replay messages successfully loaded. average number of context tokens across all messages: text={round(avg_text_tokens)}, image={round(avg_image_tokens)}"
         )
 
     def generate_messages(self) -> Tuple[Dict[str, str], Tuple[int, int]]:

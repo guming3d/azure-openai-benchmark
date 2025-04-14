@@ -111,6 +111,9 @@ class OAIRequester:
             await self._call(session, body, stats)
         except Exception as e:
             stats.last_exception = traceback.format_exc()
+            # Make sure response_end_time is set even in case of exceptions
+            if stats.response_end_time is None:
+                stats.response_end_time = time.time()
 
         return stats
 
@@ -212,22 +215,35 @@ class OAIRequester:
                     # Request is finished - no more tokens to process
                     break
                 
-                # Parse the JSON response
-                parsed_content = json.loads(content.replace("data: ", ""))
-                delta = parsed_content["choices"][0]["delta"]
-                
-                # Handle both role and content independently
-                if "role" in delta:
-                    stats.output_content.append({"role": delta["role"], "content": ""})
-                
-                if "content" in delta and delta["content"]:
-                    # If there's no existing output content yet, create one with default role
-                    if not stats.output_content:
-                        stats.output_content.append({"role": "assistant", "content": ""})
+                try:
+                    # Parse the JSON response
+                    parsed_content = json.loads(content.replace("data: ", ""))
                     
-                    # Append the content
-                    stats.output_content[-1]["content"] += delta["content"]
-                    stats.generated_tokens += 1
+                    # Check if the response has the expected structure
+                    if "choices" in parsed_content and len(parsed_content["choices"]) > 0 and "delta" in parsed_content["choices"][0]:
+                        delta = parsed_content["choices"][0]["delta"]
+                        
+                        # Handle both role and content independently
+                        if "role" in delta:
+                            stats.output_content.append({"role": delta["role"], "content": ""})
+                        
+                        if "content" in delta and delta["content"]:
+                            # If there's no existing output content yet, create one with default role
+                            if not stats.output_content:
+                                stats.output_content.append({"role": "assistant", "content": ""})
+                            
+                            # Append the content
+                            stats.output_content[-1]["content"] += delta["content"]
+                            stats.generated_tokens += 1
+                    else:
+                        if self.debug:
+                            logging.debug(f"Unexpected response structure: {parsed_content}")
+                except json.JSONDecodeError:
+                    if self.debug:
+                        logging.debug(f"Failed to parse response line: {content}")
+                except Exception as e:
+                    if self.debug:
+                        logging.debug(f"Error processing response: {str(e)}")
             
             if self.debug:
                 logging.debug("Raw response content:")

@@ -264,7 +264,8 @@ def _run_load(
         request_body, messages_tokens = request_builder.__next__()
         aggregator.record_new_request()
         stats = await requester.call(session, request_body)
-        stats.context_tokens = messages_tokens
+        stats.context_text_tokens = messages_tokens[0]
+        stats.context_image_tokens = messages_tokens[1]
         try:
             aggregator.aggregate_request(stats)
         except Exception as e:

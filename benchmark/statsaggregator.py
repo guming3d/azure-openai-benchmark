@@ -130,36 +130,51 @@ class _StatsAggregator(threading.Thread):
          try:
             self.processing_requests_count -= 1
             self.total_requests_count += 1
-            self.call_tries._append(stats.request_start_time, stats.calls)
+            if stats.request_start_time is not None:
+                self.call_tries._append(stats.request_start_time, stats.calls)
             if stats.response_status_code != 200:
                self.total_failed_count += 1
                if stats.response_status_code == 429:
                   self.throttled_count += 1
             else:
-               request_latency = stats.response_end_time - stats.request_start_time - self.network_latency_adjustment
-               self.request_latency._append(stats.request_start_time, request_latency)
-               if request_latency > self.window_duration:
-                  logging.warning((
-                        f"request completed in {round(request_latency, 2)} seconds, while aggregation-window is {round(self.window_duration, 2)} "
-                        "seconds, consider increasing aggregation-window to at least 2x your typical request latency."
+               # Check that both response_end_time and request_start_time are not None before calculation
+               if stats.response_end_time is not None and stats.request_start_time is not None:
+                  request_latency = stats.response_end_time - stats.request_start_time - self.network_latency_adjustment
+                  self.request_latency._append(stats.request_start_time, request_latency)
+                  if request_latency > self.window_duration:
+                     logging.warning((
+                           f"request completed in {round(request_latency, 2)} seconds, while aggregation-window is {round(self.window_duration, 2)} "
+                           "seconds, consider increasing aggregation-window to at least 2x your typical request latency."
+                        )
                      )
-                  )   
+               else:
+                  logging.warning(f"Skipping request latency calculation as response_end_time or request_start_time is None: ")
+               
                self.request_timestamps._append(stats.request_start_time, stats.request_start_time)
-               self.response_latencies._append(stats.request_start_time, stats.response_time - stats.request_start_time - self.network_latency_adjustment)
-               self.first_token_latencies._append(stats.request_start_time, stats.first_token_time - stats.request_start_time - self.network_latency_adjustment)
+               
+               # Check for None values before calculations
+               if stats.response_time is not None and stats.request_start_time is not None:
+                  self.response_latencies._append(stats.request_start_time, stats.response_time - stats.request_start_time - self.network_latency_adjustment)
+               
+               if stats.first_token_time is not None and stats.request_start_time is not None:
+                  self.first_token_latencies._append(stats.request_start_time, stats.first_token_time - stats.request_start_time - self.network_latency_adjustment)
+               
                if stats.generated_tokens == 0:
                   logging.error(
-                     f"generated_tokens is zero, stats details: {json.dumps(stats.as_dict(include_request_content=True))}"
+                     f"generated_tokens is zero"
                   )
-               else:
+               elif stats.generated_tokens is not None and stats.response_end_time is not None and stats.first_token_time is not None:
                   self.token_latencies._append(
                      stats.request_start_time,
                      (stats.response_end_time - stats.first_token_time - self.network_latency_adjustment) / stats.generated_tokens
                   )
-               self.context_text_tokens._append(stats.request_start_time, stats.context_text_tokens)
-               self.context_image_tokens._append(stats.request_start_time, stats.context_image_tokens)
-               self.generated_tokens._append(stats.request_start_time, stats.generated_tokens)
-            if stats.deployment_utilization is not None:
+               
+               if stats.request_start_time is not None:
+                  self.context_text_tokens._append(stats.request_start_time, stats.context_text_tokens)
+                  self.context_image_tokens._append(stats.request_start_time, stats.context_image_tokens)
+                  if stats.generated_tokens is not None:
+                     self.generated_tokens._append(stats.request_start_time, stats.generated_tokens)
+            if stats.deployment_utilization is not None and stats.request_start_time is not None:
                self.utilizations._append(stats.request_start_time, stats.deployment_utilization)
          except Exception as e:
             exc_str = '\n'.join(traceback.format_exc().splitlines()[-3:])
