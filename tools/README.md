@@ -66,7 +66,7 @@ cd azure-openai-benchmark
 运行以下命令以生成所需的提示（根据需要调整参数）：
 
 ```bash
-python tools/generate_input_prompt.py --image-dir tools/images --request-ratio 0.5 --images-per-request 3 --output-file prompt-output-0.5.json --quality-mode high --total-messages 100
+python tools/generate_input_prompt.py --image-dir tools/images --request-ratio 0.5 --images-per-request 1 --output-file prompt-output-0.5.json --quality-mode high --total-messages 100
 ```
 
 ---
