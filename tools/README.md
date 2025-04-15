@@ -66,7 +66,7 @@ cd azure-openai-benchmark
 运行以下命令以生成所需的提示（根据需要调整参数）：
 
 ```bash
-python tools/generate_input_prompt.py --image-dir tools/images --request-ratio 0.5 --output-file prompt-output-0.5.json --quality-mode high --total-messages 100
+python tools/generate_input_prompt.py --image-dir tools/images --request-ratio 0.5 --images-per-request 3 --output-file prompt-output-0.5.json --quality-mode high --total-messages 100
 ```
 
 ---
@@ -80,6 +80,7 @@ python tools/generate_input_prompt.py --image-dir tools/images --request-ratio 0
 | `--output-file`    | 输出文件路径                  |
 | `--quality-mode`   | 图像质量模式：`low` 或 `high` (可选) |
 | `--total-messages` | 生成消息的总数量 (可选)           |
+| `--images-per-request` | 每个多模态请求包含的图片数量 (1-120, 可选，默认1) |
 
 ---
 
@@ -191,7 +192,7 @@ Place the images you want to use in a directory (e.g., `tools/images`). Supporte
 Run the script with the following command (adjust parameters as needed):
 
 ```bash
-python tools/generate_input_prompt.py --image-dir tools/images --request-ratio 0.5 --output-file prompt-output-0.5.json --quality-mode high --total-messages 100
+python tools/generate_input_prompt.py --image-dir tools/images --request-ratio 0.5 --images-per-request 3 --output-file prompt-output-0.5.json --quality-mode high --total-messages 100
 ```
 
 ---
@@ -205,6 +206,7 @@ python tools/generate_input_prompt.py --image-dir tools/images --request-ratio 0
 | `--output-file`    | Output file path                                             |
 | `--quality-mode`   | Image quality mode: `low` or `high` (Optional)               |
 | `--total-messages` | Total number of messages to generate (Optional)              |
+| `--images-per-request` | Number of images to include in each multimodal request (1-120, Optional, default 1) |
 
 ---
 
