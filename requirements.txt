@@ -10,3 +10,4 @@ pandas
 pillow
 ping3
 streamlit
+google-generativeai
