@@ -4,7 +4,7 @@ import base64
 import json
 import os
 import random
-from typing import List, Union
+from typing import List, Union, Optional
 from PIL import Image
 from io import BytesIO
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -64,31 +64,50 @@ def get_image_token_count(image_path: str, quality_mode: str) -> int:
         return IMG_BASE_TOKENS_PER_IMG + tiles_per_img * IMG_HQ_TOKENS_PER_TILE
 
 
-def generate_prompt_json(image_dir: str, request_ratio: float, quality_mode: str = "high", total_messages: int = 100, images_per_request: int = 1) -> List[List[dict]]:
+def generate_prompt_json(image_dir: str, request_ratio: float, texts_dir: Optional[str], quality_mode: str = "high", total_messages: int = 100, images_per_request: int = 1) -> List[List[dict]]:
     """
     Generate a JSON file containing prompts with text-only and multimodal (text + image) requests.
     Token ratios between text and image inputs respect the request ratio.
     
     Args:
-        image_dir: Directory containing images
-        request_ratio: Ratio of multimodal requests (0.0 to 1.0)
-        quality_mode: Image quality mode ('low' or 'high')
-        total_messages: Total number of prompt messages to generate
-        images_per_request: Number of images to include in each multimodal request (1-120)
+        image_dir: Directory containing images.
+        request_ratio: Ratio of multimodal requests (0.0 to 1.0).
+        texts_dir: Directory containing text files for text-only requests. Required if request_ratio < 1.0.
+        quality_mode: Image quality mode ('low' or 'high').
+        total_messages: Total number of prompt messages to generate.
+        images_per_request: Number of images to include in each multimodal request (1-120).
     """
     # Ensure image directory exists and has images
-    if not os.path.exists(image_dir):
-        print(f"Error: Image directory '{image_dir}' not found.")
-        return []
+    if request_ratio > 0.0:
+        if not os.path.exists(image_dir):
+            print(f"Error: Image directory '{image_dir}' not found.")
+            return []
 
-    image_files = [f for f in os.listdir(image_dir) if f.lower().endswith((".jpg", ".jpeg", ".png"))]
-    if not image_files:
-        print(f"Error: No image files found in '{image_dir}'.")
-        return []
+        image_files = [f for f in os.listdir(image_dir) if f.lower().endswith((".jpg", ".jpeg", ".png"))]
+        if not image_files:
+            print(f"Error: No image files found in '{image_dir}'.")
+            return []
+        # Limit images_per_request to available images or maximum
+        images_per_request = min(images_per_request, len(image_files), 120)
+    else:
+        image_files = [] # No images needed if ratio is 0.0
 
-    # Limit images_per_request to available images or maximum
-    images_per_request = min(images_per_request, len(image_files), 120)
-    
+
+    # Load text files if needed
+    text_files = []
+    if request_ratio < 1.0:
+        if not texts_dir or not os.path.isdir(texts_dir):
+            print(f"Error: Texts directory '{texts_dir}' not found or invalid.")
+            return []
+        try:
+            text_files = [os.path.join(texts_dir, f) for f in os.listdir(texts_dir) if os.path.isfile(os.path.join(texts_dir, f))]
+            if not text_files:
+                print(f"Error: No files found in texts directory '{texts_dir}'.")
+                return []
+        except Exception as e:
+            print(f"Error: Error reading texts directory '{texts_dir}': {e}.")
+            return []
+
     # Initialize variables
     prompts = []
     image_token_total = 0
@@ -96,8 +115,17 @@ def generate_prompt_json(image_dir: str, request_ratio: float, quality_mode: str
 
     # Loop through image files and generate prompts until total_messages is reached
     while len(prompts) < total_messages:
-        # For multimodal requests with multiple images
-        if (image_token_total / (image_token_total + text_token_total + 1)) < request_ratio:
+        # Decide whether to generate a multimodal or text-only prompt
+        generate_multimodal = False
+        if request_ratio == 1.0:
+            generate_multimodal = True
+        elif request_ratio > 0.0:
+            # Check token ratio, avoiding division by zero
+            current_total_tokens = image_token_total + text_token_total
+            if current_total_tokens == 0 or (image_token_total / current_total_tokens) < request_ratio:
+                 generate_multimodal = True
+
+        if generate_multimodal:
             # Create multimodal request with multiple images
             image_batch = []
             total_batch_tokens = 0
@@ -156,33 +184,24 @@ def generate_prompt_json(image_dir: str, request_ratio: float, quality_mode: str
             text_token_total += text_tokens
             prompts.append(multimodal_request)
         else:
-            # Add simple text-only prompts
+            # Add text-only prompts from files
+            if not text_files:
+                 # This should not happen due to checks above, but as a safeguard:
+                 print("Error: No text files available for text-only request generation.")
+                 # Use a simple fallback prompt
+                 text_content = "Please provide a summary of a recent news article."
+            else:
+                 selected_text_file = random.choice(text_files)
+                 try:
+                     with open(selected_text_file, 'r', encoding='utf-8') as f:
+                         text_content = f.read()
+                 except Exception as e:
+                     print(f"Warning: Error reading text file '{selected_text_file}': {e}. Using fallback prompt.")
+                     text_content = "Please provide a summary of a recent news article."
+
             text_prompt = {
                 "type": "text",
-                "text": """
-Please write summary of following news no more than 100 words:
-OVER A CENTURY ago, ships leaving Rotterdam's harbour were among the earliest to be equipped with wireless telegraphy and submarine signalling. Now, Europe's busiest port is pioneering the use of artificial intelligence (AI). PortXChange, developed by the port and spun out as an independent entity, uses AI to analyse several dozen factors tracking vessels, port emissions and estimated arrival times. A huge source of wasted fuel is the "hurry up and wait" common among ships rushing to arrive at congested ports. This platform helped Shell, an oil giant, reduce "idle time", affecting departures of barges and bulk shipments across all ports, by 20%. The tool is now being used by companies and ports around the globe.
-
-The Dutch are hardly alone. Companies worldwide are applying AI tools like machine learning (ML) to cut energy use and emissions. Examples abound even in asset-heavy, fossil-intensive industries like steel, building maintenance and transport that account for a huge chunk of anthropogenic greenhouse gas (GHG) emissions.
-
-Consider the steel industry, responsible for roughly a tenth of CO2 emissions. It is hard to decarbonise when steel is made from virgin iron ore in conventional blast furnaces, because coal is used both as fuel and a reducing agent. A more promising path involves making steel from scrap metal in electric-arc furnaces powered with clean energy. The snag is that scrap comes in batches with varying impurities, which can make these mills more complex to operate and increase their energy use.
-
-This is where Gerdau, a big Brazilian steelmaker with global operations, is applying ML. Fero Labs, a software company, analysed years of production data from a Gerdau facility in North America to work out how different "recipes" of input materials affect the quality of outputs. Its system measures the contents of each batch of scrap and uses AI to suggest the minimum quantity of alloys that will be needed to then produce metals that meet required standards. This saves time and overuse of additives. In 2024, with no change in hardware, these efforts cut GHG emissions associated with making a commonly used grade of steel by 3.3%.
-
-In a report released on April 10th, the International Energy Agency estimates that widespread industrial application of such AI tools could save eight exajoules (EJ) of energy demand by 2035, as much energy as Mexico uses today. Widespread adoption in non-industrial sectors could save another 5EJ or so.
-
-Mining is another dirty business where AI is making inroads. Fortescue, an Australian giant, is applying AI in designing current systems and redesigning future mining and energy operations with an eye to eliminating fossil fuels. Its algorithms automate tasks such as calculating how energy is used and the routes that autonomous heavy vehicles take. If the weather forecast is for rain, meaning solar output will fall, the company brings forward energy-intensive tasks while it can still use clean solar power. The software enabling this sort of load flexibility, the firm reckons, has allowed it to cut the required capacity of the power system it built by 9%, saving nearly $500m.
-
-Buildings are responsible for perhaps a fifth of all man-made GHGs, and because they last a long time their climate impact can be hard to reduce. Happily, AI can help here too. BrainBox AI, a Canadian tech firm recently acquired by Ireland's Trane Technologies, has helped Dollar Tree, an American discount retailer, deploy autonomous heating, ventilation and air-conditioning in over 600 stores. Combining internal data with weather forecasts, the new systems cut electricity use by nearly 8GWh in a year, saving the firm over $1m.
-
-Predictive maintenance shows promise too. Using AI-powered software supplied by AVEVA, a British company, Ontario Power Generation, a utility, found some $4m in efficiency savings in two years while reducing risks. Sund & Baelt, a Danish firm, used IBM's AI (in tandem with camera-toting drones) to cut expenses by 2% year on year. The approach is so superior that the company expects to double the lifespan of its assets, in effect avoiding 750,000 tonnes of CO2 emissions.
-
-Shipping and logistics companies have taken to applying AI with gusto. UPS, a package-delivery giant, recalculates delivery routes throughout the day as orders, pickups and traffic conditions fluctuate. It estimates that its smart software has improved on-time delivery while cutting 16-22 kilometres from drivers' daily trips, saving hundreds of millions in fuel costs. Cargill Ocean Transportation, the logistics arm of an agribusiness goliath, uses AI enabled by Amazon's AWS to reduce the time ships spend loading and unloading in port, saving up to 2,800 working hours, and their associated CO2 emissions, per year.
-
-Denmark's Maersk, one of the world's largest container-shipping lines, uses AI to analyse variables from engine performance to ocean currents and weather to avoid rough seas and waiting time. Making even its older ships smarter has reduced fuel consumption by over 5% across its fleet, saving $250m and reducing CO2 emissions by perhaps 1.5m tonnes.
-
-That example points back to Rotterdam. Routescanner, a route-optimisation platform developed by the port, uses terminal and company data to offer shippers real-time alternatives on routes, modalities (barge versus lorry, say) and environmental impact. The platform is now used by leading global forwarders and ports from Houston to Singapore. Slowly but surely, AI is helping turn brown to green.
-                """
+                "text": text_content
             }
             
             text_prompt_request = [
@@ -231,26 +250,32 @@ if __name__ == "__main__":
         description="Generate JSON prompts for benchmarking OpenAI models with text and image inputs.",
         epilog="""
 Examples:
-  # Generate 100 text-only prompts
-  python tools/generate_input_prompt.py --image-dir ./images --request-ratio 0.0 --output-file prompts.json
+  # Generate 100 text-only prompts from the 'texts' directory
+  python tools/generate_input_prompt.py --image-dir ./images --request-ratio 0.0 --texts-dir ./texts --output-file prompts.json
   
-  # Generate 200 prompts with 30% image requests (1 image per request)
-  python tools/generate_input_prompt.py --image-dir ./images --request-ratio 0.3 --total-messages 200 --output-file prompts.json
+  # Generate 200 prompts with 30% image requests (1 image per request), text prompts from 'my_texts'
+  python tools/generate_input_prompt.py --image-dir ./images --request-ratio 0.3 --texts-dir ./my_texts --total-messages 200 --output-file prompts.json
   
   # Generate 50 prompts with 50% image requests (3 images per request) in high quality
-  python tools/generate_input_prompt.py --image-dir ./images --request-ratio 0.5 --total-messages 50 --images-per-request 3 --quality-mode high --output-file prompts.json
+  python tools/generate_input_prompt.py --image-dir ./images --request-ratio 0.5 --texts-dir ./prompts_text --total-messages 50 --images-per-request 3 --quality-mode high --output-file prompts.json
         """
     )
     parser.add_argument("--image-dir", type=str, required=True, help="Directory containing images for multimodal requests.")
     parser.add_argument("--request-ratio", type=float, default=0.0, help="Ratio of multimodal requests to total requests (between 0.0 and 1.0).")
+    parser.add_argument("--texts-dir", type=str, default=None, help="Directory containing text files for text-only requests. Required if --request-ratio < 1.0.")
     parser.add_argument("--output-file", type=str, required=True, help="JSON file path to save the generated prompts.")
     parser.add_argument("--quality-mode", type=str, choices=["low", "high"], default="high", help="Image quality mode: 'low' (faster) or 'high' (better quality).")
     parser.add_argument("--total-messages", type=int, default=100, help="Total number of prompt messages to generate.")
     parser.add_argument("--images-per-request", type=int, default=1, help="Number of images to include in each multimodal request (1-120).")
     args = parser.parse_args()
 
+    # Validate arguments
     if args.request_ratio < 0.0 or args.request_ratio > 1.0:
         print("Error: --request-ratio must be between 0.0 and 1.0 (inclusive).")
+        exit(1)
+
+    if args.request_ratio < 1.0 and not args.texts_dir:
+        print("Error: --texts-dir is required when --request-ratio is less than 1.0.")
         exit(1)
 
     if args.quality_mode not in ["low", "high"]:
@@ -264,6 +289,7 @@ Examples:
     prompts = generate_prompt_json(
         args.image_dir, 
         args.request_ratio, 
+        args.texts_dir,
         quality_mode=args.quality_mode, 
         total_messages=args.total_messages, 
         images_per_request=args.images_per_request
