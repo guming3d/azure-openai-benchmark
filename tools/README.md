@@ -66,7 +66,12 @@ cd azure-openai-benchmark
 运行以下命令以生成所需的提示（根据需要调整参数）：
 
 ```bash
-python tools/generate_input_prompt.py --image-dir tools/images --request-ratio 0.5 --images-per-request 1 --output-file prompt-output-0.5.json --quality-mode high --total-messages 100
+python tools/generate_input_prompt.py --image-dir tools/images --texts-dir ./texts --request-ratio 0.5 --images-per-request 3 --output-file prompt-output-0.5.json --quality-mode high --total-messages 100
+```
+
+*   要生成纯文本提示，请设置 `--request-ratio 0.0` 并提供 `--texts-dir`。
+```bash
+python tools/generate_input_prompt.py --image-dir ./images --request-ratio 0.0 --texts-dir ./texts --output-file text_prompts.json
 ```
 
 ---
@@ -75,12 +80,13 @@ python tools/generate_input_prompt.py --image-dir tools/images --request-ratio 0
 
 | 参数名称             | 参数描述                     |
 |--------------------|-----------------------------|
-| `--image-dir`      | 图片目录路径                 |
-| `--request-ratio`  | 多模态请求比例（0.0 至 1.0）        |
-| `--output-file`    | 输出文件路径                  |
-| `--quality-mode`   | 图像质量模式：`low` 或 `high` (可选) |
-| `--total-messages` | 生成消息的总数量 (可选)           |
-| `--images-per-request` | 每个多模态请求包含的图片数量 (1-120, 可选，默认1) |
+| `--image-dir`      | 图片目录路径 (如果 request-ratio > 0.0 则为必需) |
+| `--request-ratio`  | 多模态请求比例（0.0 至 1.0, 默认 0.0）        |
+| `--texts-dir`      | 包含文本文件的目录路径 (如果 request-ratio < 1.0 则为必需) |
+| `--output-file`    | 输出文件路径 (必需)                 |
+| `--quality-mode`   | 图像质量模式：`low` 或 `high` (可选, 默认 'high') |
+| `--total-messages` | 生成消息的总数量 (可选, 默认 100)           |
+| `--images-per-request` | 每个多模态请求包含的图片数量 (1-120, 可选, 默认 1) |
 
 ---
 
@@ -91,7 +97,14 @@ python tools/generate_input_prompt.py --image-dir tools/images --request-ratio 0
     Error: --request-ratio must be between 0.0 and 1.0 (inclusive).
     ```
 
-*   如果图片目录中未找到任何图片，脚本将抛出错误：
+*   如果 `--request-ratio < 1.0` 但未提供 `--texts-dir` 或目录无效，脚本将抛出错误：
+    ```
+    Error: --texts-dir is required when --request-ratio is less than 1.0.
+    Error: Texts directory '<texts_dir>' not found or invalid.
+    Error: No files found in texts directory '<texts_dir>'.
+    ```
+
+*   如果 `--request-ratio > 0.0` 但图片目录中未找到任何图片，脚本将抛出错误：
     ```
     Error: No image files found in '<图片目录路径>'.
     ```
@@ -192,7 +205,12 @@ Place the images you want to use in a directory (e.g., `tools/images`). Supporte
 Run the script with the following command (adjust parameters as needed):
 
 ```bash
-python tools/generate_input_prompt.py --image-dir tools/images --request-ratio 0.5 --images-per-request 3 --output-file prompt-output-0.5.json --quality-mode high --total-messages 100
+python tools/generate_input_prompt.py --image-dir tools/images --texts-dir ./texts --request-ratio 0.5 --images-per-request 3 --output-file prompt-output-0.5.json --quality-mode high --total-messages 100
+```
+
+*   To generate text-only prompts, set `--request-ratio 0.0` and provide `--texts-dir`:
+```bash
+python tools/generate_input_prompt.py --image-dir ./images --request-ratio 0.0 --texts-dir ./texts --output-file text_prompts.json
 ```
 
 ---
@@ -201,11 +219,12 @@ python tools/generate_input_prompt.py --image-dir tools/images --request-ratio 0
 
 | Parameter          | Description                                                  |
 |--------------------|--------------------------------------------------------------|
-| `--image-dir`      | Path to the directory containing images                      |
-| `--request-ratio`  | Ratio of multimodal requests (0.0 to 1.0)                    |
-| `--output-file`    | Output file path                                             |
-| `--quality-mode`   | Image quality mode: `low` or `high` (Optional)               |
-| `--total-messages` | Total number of messages to generate (Optional)              |
+| `--image-dir`      | Path to the directory containing images (Required if request-ratio > 0.0) |
+| `--request-ratio`  | Ratio of multimodal requests (0.0 to 1.0, default 0.0)       |
+| `--texts-dir`      | Path to the directory containing text files (Required if request-ratio < 1.0) |
+| `--output-file`    | Output file path (Required)                                  |
+| `--quality-mode`   | Image quality mode: `low` or `high` (Optional, default 'high') |
+| `--total-messages` | Total number of messages to generate (Optional, default 100)   |
 | `--images-per-request` | Number of images to include in each multimodal request (1-120, Optional, default 1) |
 
 ---
@@ -217,7 +236,14 @@ python tools/generate_input_prompt.py --image-dir tools/images --request-ratio 0
     Error: --request-ratio must be between 0.0 and 1.0 (inclusive).
     ```
 
-*   If no images are found in the image directory, an error will be thrown:
+*   If `--request-ratio < 1.0` and `--texts-dir` is not provided or invalid, an error will be thrown:
+    ```
+    Error: --texts-dir is required when --request-ratio is less than 1.0.
+    Error: Texts directory '<texts_dir>' not found or invalid.
+    Error: No files found in texts directory '<texts_dir>'.
+    ```
+
+*   If `--request-ratio > 0.0` and no images are found in the image directory, an error will be thrown:
     ```
     Error: No image files found in '<image_dir>'.
     ```
@@ -245,5 +271,13 @@ The application will open in your web browser, allowing you to upload a log file
 Below is an example of the visualization interface after uploading a log file:
 
 ![Azure OpenAI Performance Visualization UI](assets/visualize_streamlit_ui.jpg)
+
+---
+
+### Contact Information
+
+For any questions or suggestions, please submit an [Issue](https://github.com/guming3d/azure-openai-benchmark/issues). 
+
+---
 
 

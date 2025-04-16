@@ -7,6 +7,7 @@ import time
 from typing import Optional
 import json
 import traceback
+import random
 
 import aiohttp
 import backoff
@@ -131,6 +132,26 @@ class OAIRequester:
         stats.calls += 1
         stats.request_start_time = time.time()
         stats.input_messages = body.get("messages", [])
+
+        # Add timestamp and random number to message content to avoid caching
+        current_timestamp = time.time()
+        random_number = random.random()
+        prefix = f"ts={current_timestamp} rand={random_number}\n"
+        if stats.input_messages:
+            for message in stats.input_messages:
+                if 'content' in message and isinstance(message['content'], str):
+                     message['content'] = prefix + message['content']
+                elif 'content' in message and isinstance(message['content'], list): # Handle list content (e.g., multimodal)
+                    # Prepend to the first text part if available
+                    prepended = False
+                    for item in message['content']:
+                        if isinstance(item, dict) and item.get('type') == 'text':
+                            item['text'] = prefix + item.get('text', '')
+                            prepended = True
+                            break
+                    # If no text part, add a new text part at the beginning
+                    if not prepended:
+                         message['content'].insert(0, {'type': 'text', 'text': prefix.strip()})
 
         # Calculate context tokens before making the request
         if stats.input_messages:

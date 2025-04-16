@@ -14,6 +14,7 @@ from benchmark.oaitokenizer import num_tokens_from_text
 IMG_BASE_TOKENS_PER_IMG = 85
 IMG_HQ_TOKENS_PER_TILE = 170
 IMG_TILE_SIZE = 512
+DEFAULT_MAX_WORDS = 400
 
 def get_base64_img_dimensions(base64_image: str) -> Union[tuple[int, int], None]:
     """
@@ -64,7 +65,7 @@ def get_image_token_count(image_path: str, quality_mode: str) -> int:
         return IMG_BASE_TOKENS_PER_IMG + tiles_per_img * IMG_HQ_TOKENS_PER_TILE
 
 
-def generate_prompt_json(image_dir: str, request_ratio: float, texts_dir: Optional[str], quality_mode: str = "high", total_messages: int = 100, images_per_request: int = 1) -> List[List[dict]]:
+def generate_prompt_json(image_dir: str, request_ratio: float, texts_dir: Optional[str], quality_mode: str = "high", total_messages: int = 100, images_per_request: int = 1, max_words: int = DEFAULT_MAX_WORDS) -> List[List[dict]]:
     """
     Generate a JSON file containing prompts with text-only and multimodal (text + image) requests.
     Token ratios between text and image inputs respect the request ratio.
@@ -76,6 +77,7 @@ def generate_prompt_json(image_dir: str, request_ratio: float, texts_dir: Option
         quality_mode: Image quality mode ('low' or 'high').
         total_messages: Total number of prompt messages to generate.
         images_per_request: Number of images to include in each multimodal request (1-120).
+        max_words: Maximum number of words to request in the generated prompt.
     """
     # Ensure image directory exists and has images
     if request_ratio > 0.0:
@@ -160,7 +162,7 @@ def generate_prompt_json(image_dir: str, request_ratio: float, texts_dir: Option
                 continue
                 
             # Create prompt text based on number of images
-            prompt_text = f"Please write a story about {'this image' if len(image_batch) == 1 else 'these images'}, no more than 400 words"
+            prompt_text = f"Please write a story about {'this image' if len(image_batch) == 1 else 'these images'}, no more than {max_words} words"
             image_text_prompt = {
                 "type": "text",
                 "text": prompt_text
@@ -189,15 +191,17 @@ def generate_prompt_json(image_dir: str, request_ratio: float, texts_dir: Option
                  # This should not happen due to checks above, but as a safeguard:
                  print("Error: No text files available for text-only request generation.")
                  # Use a simple fallback prompt
-                 text_content = "Please provide a summary of a recent news article."
+                 text_content = f"Please provide a summary of a recent news article, no more than {max_words} words."
             else:
                  selected_text_file = random.choice(text_files)
                  try:
                      with open(selected_text_file, 'r', encoding='utf-8') as f:
-                         text_content = f.read()
+                         # Prepend the instruction to the existing text content
+                         file_content = f.read()
+                         text_content = f"Please summarize the following text in no more than {max_words} words:\n\n{file_content}"
                  except Exception as e:
                      print(f"Warning: Error reading text file '{selected_text_file}': {e}. Using fallback prompt.")
-                     text_content = "Please provide a summary of a recent news article."
+                     text_content = f"Please provide a summary of a recent news article, no more than {max_words} words."
 
             text_prompt = {
                 "type": "text",
@@ -257,7 +261,7 @@ Examples:
   python tools/generate_input_prompt.py --image-dir ./images --request-ratio 0.3 --texts-dir ./my_texts --total-messages 200 --output-file prompts.json
   
   # Generate 50 prompts with 50% image requests (3 images per request) in high quality
-  python tools/generate_input_prompt.py --image-dir ./images --request-ratio 0.5 --texts-dir ./prompts_text --total-messages 50 --images-per-request 3 --quality-mode high --output-file prompts.json
+  python tools/generate_input_prompt.py --image-dir ./images --request-ratio 0.5 --texts-dir ./prompts_text --total-messages 50 --images-per-request 3 --quality-mode high --max-words 500 --output-file prompts.json
         """
     )
     parser.add_argument("--image-dir", type=str, required=True, help="Directory containing images for multimodal requests.")
@@ -267,6 +271,7 @@ Examples:
     parser.add_argument("--quality-mode", type=str, choices=["low", "high"], default="high", help="Image quality mode: 'low' (faster) or 'high' (better quality).")
     parser.add_argument("--total-messages", type=int, default=100, help="Total number of prompt messages to generate.")
     parser.add_argument("--images-per-request", type=int, default=1, help="Number of images to include in each multimodal request (1-120).")
+    parser.add_argument("--max-words", type=int, default=DEFAULT_MAX_WORDS, help="Maximum number of words to request in the generated prompt.")
     args = parser.parse_args()
 
     # Validate arguments
@@ -292,7 +297,8 @@ Examples:
         args.texts_dir,
         quality_mode=args.quality_mode, 
         total_messages=args.total_messages, 
-        images_per_request=args.images_per_request
+        images_per_request=args.images_per_request,
+        max_words=args.max_words
     )
     if prompts:
         with open(args.output_file, "w") as output_file:

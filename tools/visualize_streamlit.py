@@ -4,6 +4,13 @@ import re
 import pandas as pd
 # Removed Matplotlib imports as we'll use Streamlit native charts
 import io
+import argparse
+import os
+
+# --- Argument Parsing ---
+parser = argparse.ArgumentParser(description="Visualize Azure OpenAI benchmark logs.")
+parser.add_argument("--log-file", type=str, help="Path to the log file to visualize directly.")
+args = parser.parse_args()
 
 # --- Core Data Processing Functions ---
 # parse_log_file remains the same as the previous version
@@ -26,7 +33,16 @@ def parse_log_file(uploaded_file):
 
     try:
         # Read the file content as a string
-        stringio = io.StringIO(uploaded_file.getvalue().decode("utf-8"))
+        # Handle both Streamlit UploadedFile and file-like object from argparse
+        if hasattr(uploaded_file, 'getvalue'): # Streamlit UploadedFile
+            file_content = uploaded_file.getvalue().decode("utf-8")
+        elif hasattr(uploaded_file, 'read'): # File object from open()
+            file_content = uploaded_file.read()
+        else:
+            st.error("Invalid file object provided.")
+            return None
+
+        stringio = io.StringIO(file_content)
         lines = stringio.readlines()
 
         for line in lines:
@@ -126,16 +142,48 @@ st.title("Azure OpenAI performance data visualization")
 st.markdown("""
 Upload your benchmark log file (containing JSON metrics per line) to visualize the performance.
 The script expects log lines with `INFO` level containing a JSON payload with metrics like `timestamp`, `rpm`, `tpm`, `e2e`, etc.
+Or provide the path using the `--log-file` command-line argument.
 """)
 
-uploaded_file = st.file_uploader("Choose a log file (.txt, .log)", type=['txt', 'log'])
+log_file_to_process = None
+uploaded_file_name = None
 
-if uploaded_file is not None:
-    st.success(f"File '{uploaded_file.name}' uploaded successfully!")
+# Check if log file path is provided via argument
+if args.log_file:
+    if os.path.exists(args.log_file):
+        try:
+            # Open the file in text mode directly
+            log_file_to_process = open(args.log_file, 'r', encoding='utf-8')
+            uploaded_file_name = args.log_file
+            st.info(f"Processing log file from command line argument: {args.log_file}")
+        except Exception as e:
+            st.error(f"Error opening log file {args.log_file}: {e}")
+            log_file_to_process = None # Ensure it's None if opening failed
+    else:
+        st.error(f"Log file not found at path: {args.log_file}")
+
+# If no command-line argument or error opening, use the uploader
+if log_file_to_process is None:
+    uploaded_file = st.file_uploader("Choose a log file (.txt, .log)", type=['txt', 'log'])
+    if uploaded_file is not None:
+        log_file_to_process = uploaded_file
+        uploaded_file_name = uploaded_file.name
+else:
+    # Hide the uploader if we are processing from args
+    st.empty() # Creates a placeholder that we don't fill
+
+# Process the file (either from argument or uploader)
+if log_file_to_process is not None:
+    if uploaded_file_name: # Display success only if a file name is available
+        st.success(f"Processing '{uploaded_file_name}'...")
 
     with st.spinner('Parsing and processing log file...'):
-        raw_df = parse_log_file(uploaded_file)
+        raw_df = parse_log_file(log_file_to_process)
         processed_df = preprocess_data(raw_df)
+        # Close the file if opened via argparse
+        if hasattr(log_file_to_process, 'close') and log_file_to_process is not uploaded_file:
+             log_file_to_process.close()
+
 
     if processed_df is not None and not processed_df.empty:
         # Removed the display of the data sample dataframe
@@ -219,8 +267,8 @@ if uploaded_file is not None:
          st.error("Could not preprocess data. Check log file format and content.")
     # else: Error message handled in parse_log_file
 
-else:
-    st.info("Please upload a log file to begin.")
+elif not args.log_file: # Only show 'Please upload' if not using args
+    st.info("Please upload a log file or provide `--log-file` argument to begin.")
 
 st.markdown("---")
 st.caption("App powered by Streamlit.")
