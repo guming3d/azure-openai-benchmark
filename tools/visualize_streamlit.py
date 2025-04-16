@@ -16,20 +16,24 @@ args = parser.parse_args()
 # parse_log_file remains the same as the previous version
 def parse_log_file(uploaded_file):
     """
-    Parses the uploaded log file content to extract performance metrics.
+    Parses the uploaded log file content to extract performance metrics
+    and test configuration.
 
     Args:
         uploaded_file: The file object uploaded via Streamlit's file_uploader.
 
     Returns:
-        pandas.DataFrame: A DataFrame containing the parsed metrics,
-                          or None if parsing fails or no data is found.
+        tuple: A tuple containing:
+            - pandas.DataFrame: DataFrame with parsed metrics, or None if parsing fails.
+            - dict: Dictionary with test configuration, or None if not found.
     """
     data = []
+    config_data = None
     log_pattern = re.compile(r"INFO\s+({.*?})$") # Regex to find JSON in log lines
+    config_pattern = re.compile(r"INFO\s+Load test args:\s+({.*?})$") # Regex for config line
 
     if uploaded_file is None:
-        return None
+        return None, None
 
     try:
         # Read the file content as a string
@@ -38,35 +42,56 @@ def parse_log_file(uploaded_file):
             file_content = uploaded_file.getvalue().decode("utf-8")
         elif hasattr(uploaded_file, 'read'): # File object from open()
             file_content = uploaded_file.read()
+            # Reset cursor for subsequent metric parsing if reading from file object
+            if hasattr(uploaded_file, 'seek'):
+                uploaded_file.seek(0)
         else:
             st.error("Invalid file object provided.")
-            return None
+            return None, None
 
         stringio = io.StringIO(file_content)
         lines = stringio.readlines()
+
+        # Find config in the first few lines (adjust limit if needed)
+        for line in lines[:10]: # Check first 10 lines for config
+             config_match = config_pattern.search(line)
+             if config_match:
+                 try:
+                     config_data = json.loads(config_match.group(1))
+                     break # Found config, stop searching
+                 except json.JSONDecodeError as e:
+                     st.warning(f"Could not parse config JSON: {e} - Line: {line.strip()}", icon="⚠️")
+                 except Exception as e: # Catch other potential errors during config parsing
+                     st.warning(f"Error processing config line: {e} - Line: {line.strip()}", icon="⚠️")
+
 
         for line in lines:
             match = log_pattern.search(line)
             if match:
                 json_str = match.group(1)
-                try:
-                    log_entry = json.loads(json_str)
-                    data.append(log_entry)
-                except json.JSONDecodeError as e:
-                    st.warning(f"Skipping line due to JSON decode error: {e} - Line: {line.strip()}", icon="⚠️")
-                except Exception as e:
-                    st.warning(f"Skipping line due to other error: {e} - Line: {line.strip()}", icon="⚠️")
+                # Avoid parsing the config line again as a metric line
+                if "Load test args:" not in line:
+                    try:
+                        log_entry = json.loads(json_str)
+                        data.append(log_entry)
+                    except json.JSONDecodeError as e:
+                        st.warning(f"Skipping metric line due to JSON decode error: {e} - Line: {line.strip()}", icon="⚠️")
+                    except Exception as e:
+                        st.warning(f"Skipping metric line due to other error: {e} - Line: {line.strip()}", icon="⚠️")
 
-        if not data:
-            st.error("No valid metric data found in the uploaded log file.")
-            return None
+        if not data and config_data is None:
+            st.error("No valid metric data or configuration found in the log file.")
+            return None, None
+        elif not data:
+             st.warning("No valid metric data found, but configuration was extracted.", icon="ℹ️")
 
-        df = pd.DataFrame(data)
-        return df
+
+        df = pd.DataFrame(data) if data else pd.DataFrame() # Handle case where only config is found
+        return df, config_data
 
     except Exception as e:
         st.error(f"An error occurred while reading or parsing the file: {e}")
-        return None
+        return None, None
 
 # preprocess_data remains the same as the previous version
 def preprocess_data(df):
@@ -178,16 +203,22 @@ if log_file_to_process is not None:
         st.success(f"Processing '{uploaded_file_name}'...")
 
     with st.spinner('Parsing and processing log file...'):
-        raw_df = parse_log_file(log_file_to_process)
+        raw_df, config_data = parse_log_file(log_file_to_process) # Capture config_data
         processed_df = preprocess_data(raw_df)
         # Close the file if opened via argparse
         if hasattr(log_file_to_process, 'close') and log_file_to_process is not uploaded_file:
              log_file_to_process.close()
 
+    # --- Display Configuration ---
+    if config_data:
+        st.subheader("Test Configuration")
+        # Convert dict to DataFrame for better display
+        config_df = pd.DataFrame(list(config_data.items()), columns=['Parameter', 'Value'])
+        st.table(config_df.set_index('Parameter')) # Use st.table for static display
+    elif not raw_df.empty: # Show message only if we expected config but didn't find it
+         st.warning("Could not find test configuration information in the log file.", icon="⚠️")
 
     if processed_df is not None and not processed_df.empty:
-        # Removed the display of the data sample dataframe
-
         st.subheader("Performance Plots")
         st.markdown("Hover over the charts to see details.")
 
