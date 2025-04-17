@@ -21,27 +21,8 @@ def str2bool(v):
         raise argparse.ArgumentTypeError('Boolean value expected.')
     
 def main():
-    # Create a formatter that includes timestamp
-    formatter = logging.Formatter("%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-    
-    # Set up console handler
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-    
-    # Set up file handler for local logs
-    log_dir = "logs"
-    os.makedirs(log_dir, exist_ok=True)
-    now = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-    file_handler = logging.FileHandler(os.path.join(log_dir, f"benchmark_{now}.log"))
-    file_handler.setFormatter(formatter)
-    
-    # Configure root logger
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)  # Set to DEBUG to capture all levels
-    root_logger.addHandler(console_handler)
-    root_logger.addHandler(file_handler)
-
     parser = argparse.ArgumentParser(description="Benchmarking tool for Azure OpenAI Provisioned Throughput Units (PTUs).")
+    parser.add_argument("--log-save-dir", type=str, default="logs", help="Directory to save log files. Defaults to 'logs'.")
     sub_parsers = parser.add_subparsers()
 
     load_parser = sub_parsers.add_parser("load", help="Run load generation tool.")
@@ -67,7 +48,7 @@ def main():
     load_parser.add_argument("--openai-compatible", type=str2bool, nargs='?', help="Indicate if the endpoint is OpenAI API compatible (like openai.com or googleapis.com). Defaults to False.", const=True, default=False)
     load_parser.add_argument("--adjust-for-network-latency", type=str2bool, nargs='?', help="If True, will subtract base network delay from all latency measurements (based on ping). Only use this when trying to simulate the results as if the test machine was in the same data centre as the endpoint. Defaults to False.", const=True, default=False)
     load_parser.add_argument("-f", "--output-format", type=str, default="jsonl", help="Output format.", choices=["jsonl", "human"])
-    load_parser.add_argument("--log-save-dir", type=str, help="If provided, will save stddout to this directory. Filename will include important run parameters.")
+    load_parser.add_argument("--log-save-dir", type=str, help="If provided, will save detailed stdout logs to this directory (in addition to the main benchmark log). Filename will include important run parameters.")
     load_parser.add_argument("--log-request-content", type=str2bool, nargs='?', help="If True, will log the raw input and output tokens of every request. Defaults to False.", const=True, default=False)
     load_parser.add_argument("-t", "--retry", type=str, default="none", help="Request retry strategy. See README for details", choices=["none", "exponential"])
     load_parser.add_argument("-e", "--deployment", type=str, help="Azure OpenAI deployment name, or OpenAI.com model name.", required=True)
@@ -86,6 +67,27 @@ def main():
 
     args = parser.parse_args()
 
+    # Create a formatter that includes timestamp
+    formatter = logging.Formatter("%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+    
+    # Set up console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    
+    # Use the parsed argument for the log directory
+    log_dir = args.log_save_dir
+    os.makedirs(log_dir, exist_ok=True)
+    now = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    # Use the potentially configured log_dir here
+    file_handler = logging.FileHandler(os.path.join(log_dir, f"benchmark_{now}.log"))
+    file_handler.setFormatter(formatter)
+    
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)  # Set to DEBUG to capture all levels
+    root_logger.addHandler(console_handler)
+    root_logger.addHandler(file_handler)
+
     if args.func is load and args.log_save_dir is not None:
         now = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
         # Create log file output
@@ -94,6 +96,7 @@ def main():
         else:
             token_config_str = f"replay-basename={os.path.basename(args.replay_path).split('.')[0]}_max-tokens={args.max_tokens}"
         rate_str = str(int(args.rate)) if (args.rate is not None) else 'none'
+        # This uses the --log-save-dir specific to the load command
         output_path = os.path.join(args.log_save_dir, f"{now}_{args.deployment}_{token_config_str}_clients={int(args.clients)}_rate={rate_str}.log")
         os.makedirs(args.log_save_dir, exist_ok=True)
         try:
@@ -101,12 +104,14 @@ def main():
         except FileNotFoundError:
             pass
         fh = logging.FileHandler(output_path)
+        fh.setFormatter(formatter) # Also apply the formatter here
         logger = logging.getLogger()
         logger.addHandler(fh)
 
     if "func" in args:
         args.func(args)
     else:
-        parser.parse_args("--help")
+        # Use the main parser's help if no subcommand is given
+        parser.print_help()
 
 main()
