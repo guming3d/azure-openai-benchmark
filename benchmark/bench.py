@@ -23,6 +23,7 @@ def str2bool(v):
 def main():
     parser = argparse.ArgumentParser(description="Benchmarking tool for Azure OpenAI Provisioned Throughput Units (PTUs).")
     parser.add_argument("--log-save-dir", type=str, default="logs", help="Directory to save log files. Defaults to 'logs'.")
+    parser.add_argument("--testcase-name", type=str, default="", help="Name of the testcase to be included in log filenames.")
     sub_parsers = parser.add_subparsers()
 
     load_parser = sub_parsers.add_parser("load", help="Run load generation tool.")
@@ -79,7 +80,8 @@ def main():
     os.makedirs(log_dir, exist_ok=True)
     now = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     # Use the potentially configured log_dir here
-    file_handler = logging.FileHandler(os.path.join(log_dir, f"benchmark_{now}.log"))
+    testcase_suffix = f"_{args.testcase_name}" if args.testcase_name else ""
+    file_handler = logging.FileHandler(os.path.join(log_dir, f"benchmark_{now}{testcase_suffix}.log"))
     file_handler.setFormatter(formatter)
     
     # Configure root logger
