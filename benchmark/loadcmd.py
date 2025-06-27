@@ -40,6 +40,7 @@ class _RequestBuilder:
         temperature: None,
         top_p: None,
         model: None,
+        enable_prediction: bool = False,
     ):
         self.messages_generator = messages_generator
         self.max_tokens = max_tokens
@@ -49,6 +50,7 @@ class _RequestBuilder:
         self.temperature = temperature
         self.top_p = top_p
         self.model = model
+        self.enable_prediction = enable_prediction
 
     def __iter__(self) -> Iterator[dict]:
         return self
@@ -56,6 +58,21 @@ class _RequestBuilder:
     def __next__(self) -> (dict, int):
         messages, messages_tokens = self.messages_generator.generate_messages()
         body = {"messages": messages}
+        
+        # Add prediction part - extract user content for prediction (only if enabled)
+        if self.enable_prediction:
+            user_content = None
+            for message in messages:
+                if message.get("role") == "user":
+                    user_content = message.get("content")
+                    break
+            
+            if user_content is not None:
+                body["prediction"] = {
+                    "type": "content", 
+                    "content": user_content
+                }
+        
         if self.max_tokens is not None:
             body["max_tokens"] = self.max_tokens
         if self.completions is not None:
@@ -106,6 +123,7 @@ def load(args):
         "adjust_for_network_latency": args.adjust_for_network_latency,
         "output_format": args.output_format,
         "log_request_content": args.log_request_content,
+        "enable_prediction": args.enable_prediction,
     }
     converted = json.dumps(run_args)
     logging.info("Load test args: " + converted)
@@ -209,6 +227,7 @@ def load(args):
         temperature=args.temperature,
         top_p=args.top_p,
         model=args.deployment if is_openai_com_endpoint else None,
+        enable_prediction=args.enable_prediction,
     )
 
     logging.info("starting load...")

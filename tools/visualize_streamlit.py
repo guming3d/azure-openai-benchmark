@@ -239,6 +239,29 @@ if log_file_to_process is not None:
             e2e_cols = ['e2e_avg', 'e2e_95th']
             if any(col in processed_df.columns for col in e2e_cols): # Plot if at least one column exists
                 cols_to_plot = [col for col in e2e_cols if col in processed_df.columns]
+                
+                # Display comprehensive E2E latency statistics
+                if cols_to_plot:
+                    # Show statistics for each available metric
+                    for i, col in enumerate(cols_to_plot):
+                        data = processed_df[col].dropna()
+                        if not data.empty:
+                            metric_name = "Average E2E" if col == 'e2e_avg' else "95th Percentile E2E"
+                            st.write(f"**{metric_name} Statistics:**")
+                            col_a, col_b, col_c, col_d = st.columns(4)
+                            with col_a:
+                                st.metric("Mean", f"{data.mean():.3f}s")
+                            with col_b:
+                                st.metric("Median", f"{data.median():.3f}s")
+                            with col_c:
+                                st.metric("Min", f"{data.min():.3f}s")
+                            with col_d:
+                                st.metric("Max", f"{data.max():.3f}s")
+                            
+                            # Add some spacing between different metrics
+                            if i < len(cols_to_plot) - 1:
+                                st.write("")
+                
                 st.line_chart(processed_df[cols_to_plot].dropna(how='all'))
             else:
                 st.caption("E2E Latency data not available.")

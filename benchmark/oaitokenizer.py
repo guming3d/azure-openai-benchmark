@@ -126,13 +126,20 @@ def num_tokens_from_messages(messages, model):
         encoding = tiktoken.encoding_for_model(model)
     except KeyError as e:
         if "Could not automatically map" in str(e):
-            raise RuntimeError(
-                (
-                    f"Unsupported tiktoken model: '{model}'. This is usually caused by an out-of-date version of tiktoken (your version: {version('tiktoken')})."
-                    "Please run `pip install --upgrade -r requirements.txt` to upgrade all dependencies to their latest versions, then try again."
-                )
-            ) from e
-        raise
+            # Handle new GPT models that aren't in tiktoken yet
+            if model.startswith("gpt-4.1") or model.startswith("gpt-4o") or "nano" in model:
+                # Use GPT-4 encoding for GPT-4.1 and nano models
+                logging.warning(f"Model '{model}' not found in tiktoken, using GPT-4 encoding as fallback")
+                encoding = tiktoken.encoding_for_model("gpt-4")
+            else:
+                raise RuntimeError(
+                    (
+                        f"Unsupported tiktoken model: '{model}'. This is usually caused by an out-of-date version of tiktoken (your version: {version('tiktoken')})."
+                        "Please run `pip install --upgrade -r requirements.txt` to upgrade all dependencies to their latest versions, then try again."
+                    )
+                ) from e
+        else:
+            raise
 
     if model in {
         "gpt-35-turbo",
@@ -148,7 +155,7 @@ def num_tokens_from_messages(messages, model):
         "gpt-4-0613",
         "gpt-4-32k-0613",
         "gpt-4o",
-    } or model.startswith("gpt-4o-"):
+    } or model.startswith("gpt-4o-") or model.startswith("gpt-4.1") or "nano" in model:
         tokens_per_message = 3
         tokens_per_name = 1
     elif model == "gpt-35-turbo-0301" or model == "gpt-3.5-turbo-0301":
