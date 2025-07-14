@@ -124,6 +124,7 @@ def load(args):
         "output_format": args.output_format,
         "log_request_content": args.log_request_content,
         "enable_prediction": args.enable_prediction,
+        "custom_headers": args.custom_headers,
     }
     converted = json.dumps(run_args)
     logging.info("Load test args: " + converted)
@@ -133,6 +134,17 @@ def load(args):
         raise ValueError(
             f"API key is not set - make sure to set the environment variable '{args.api_key_env}'"
         )
+    
+    # Parse custom headers if provided
+    custom_headers = {}
+    if args.custom_headers:
+        try:
+            custom_headers = json.loads(args.custom_headers)
+            if not isinstance(custom_headers, dict):
+                raise ValueError("custom-headers must be a JSON object")
+            logging.info(f"Using custom headers: {custom_headers}")
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON in custom-headers: {e}")
     # Check if endpoint is OpenAI compatible based on command line arg or URL patterns
     is_openai_com_endpoint = args.openai_compatible or "openai.com" in args.api_base_endpoint[0] or "googleapis.com" in args.api_base_endpoint[0]
     # Set URL
@@ -247,6 +259,7 @@ def load(args):
         log_request_content=args.log_request_content,
         network_latency_adjustment=network_latency_adjustment,
         is_openai_com_endpoint=is_openai_com_endpoint,
+        custom_headers=custom_headers,
     )
 
 
@@ -264,7 +277,8 @@ def _run_load(
     json_output=False,
     log_request_content=False,
     network_latency_adjustment=0,
-    is_openai_com_endpoint=False
+    is_openai_com_endpoint=False,
+    custom_headers=None
 ):
     aggregator = _StatsAggregator(
         window_duration=aggregation_duration,
@@ -275,7 +289,7 @@ def _run_load(
         log_request_content=log_request_content,
         network_latency_adjustment=network_latency_adjustment,
     )
-    requester = OAIRequester(api_key, url, backoff=backoff, debug=True, is_openai_compatible=is_openai_com_endpoint)
+    requester = OAIRequester(api_key, url, backoff=backoff, debug=True, is_openai_compatible=is_openai_com_endpoint, custom_headers=custom_headers)
 
     async def request_func(session: aiohttp.ClientSession):
         nonlocal aggregator

@@ -52,6 +52,7 @@ def main():
     load_parser.add_argument("--log-save-dir", type=str, help="If provided, will save detailed stdout logs to this directory (in addition to the main benchmark log). Filename will include important run parameters.")
     load_parser.add_argument("--log-request-content", type=str2bool, nargs='?', help="If True, will log the raw input and output tokens of every request. Defaults to False.", const=True, default=False)
     load_parser.add_argument("--enable-prediction", type=str2bool, nargs='?', help="If True, will include prediction field in requests (for models that support it). Defaults to False.", const=True, default=False)
+    load_parser.add_argument("--custom-headers", type=str, help="Custom HTTP headers to include in requests as JSON string (e.g., '{\"x-custom-header\": \"value\"}'). Defaults to None.")
     load_parser.add_argument("-t", "--retry", type=str, default="none", help="Request retry strategy. See README for details", choices=["none", "exponential"])
     load_parser.add_argument("-e", "--deployment", type=str, help="Azure OpenAI deployment name, or OpenAI.com model name.", required=True)
     load_parser.add_argument("api_base_endpoint", help="Azure OpenAI deployment base endpoint (or OpenAI.com chat completions endpoint).", nargs=1)

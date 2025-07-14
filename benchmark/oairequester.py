@@ -22,6 +22,8 @@ MAX_RETRY_SECONDS = 60.0
 TELEMETRY_USER_AGENT_HEADER = "x-ms-useragent"
 USER_AGENT = "aoai-benchmark"
 
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+
 class RequestStats:
     """
     Statistics collected for a particular AOAI request.
@@ -84,12 +86,13 @@ class OAIRequester:
     :param debug: Whether to print raw request and response content for debugging.
     :param is_openai_compatible: Whether the endpoint is OpenAI compatible (e.g., openai.com or Google's API).
     """
-    def __init__(self, api_key: str, url: str, backoff=False, debug=True, is_openai_compatible=False):
+    def __init__(self, api_key: str, url: str, backoff=False, debug=True, is_openai_compatible=False, custom_headers=None):
         self.api_key = api_key
         self.url = url
         self.backoff = backoff
         self.debug = debug
         self.is_openai_compatible = is_openai_compatible
+        self.custom_headers = custom_headers or {}
 
     async def call(self, session:aiohttp.ClientSession, body: dict) -> RequestStats:
         """
@@ -171,6 +174,10 @@ class OAIRequester:
             headers["Authorization"] = f"Bearer {self.api_key}"
         else:
             headers["api-key"] = self.api_key
+        
+        # Add custom headers if provided
+        if self.custom_headers:
+            headers.update(self.custom_headers)
 
         if self.debug:
             logging.debug(f"Raw request to {self.url}:")
